@@ -7,3 +7,4 @@ class Diagnostic(StatesGroup):
     source = State()
     stability = State()
     geo = State()
+    content = State()   # ← ВОТ ЭТО ДОБАВЬ
