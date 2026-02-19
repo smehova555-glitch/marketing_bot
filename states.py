@@ -6,13 +6,19 @@ class Diagnostic(StatesGroup):
     # выбор формата
     format = State()
 
-    # короткая
-    short_role = State()
-    short_strategy = State()
-
-    # полная
+    # базовая диагностика
     role = State()
+    turnover = State()
     strategy = State()
-    source = State()
+    channel = State()
     stability = State()
     geo = State()
+    budget = State()
+
+    # ветвление
+    branch_start = State()
+    branch_growth = State()
+    branch_scale = State()
+
+    # финал
+    finished = State()
