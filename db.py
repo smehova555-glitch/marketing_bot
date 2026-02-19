@@ -1,18 +1,16 @@
 import sqlite3
-from datetime import datetime
-
-DB_NAME = "leads.db"
 
 
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
+    conn = sqlite3.connect("leads.db")
+    cursor = conn.cursor()
 
-    cur.execute("""
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS leads (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id INTEGER,
             username TEXT,
+            type TEXT,
             score INTEGER,
             segment TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -24,17 +22,18 @@ def init_db():
 
 
 def save_lead(data: dict):
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
+    conn = sqlite3.connect("leads.db")
+    cursor = conn.cursor()
 
-    cur.execute("""
-        INSERT INTO leads (telegram_id, username, score, segment)
-        VALUES (?, ?, ?, ?)
+    cursor.execute("""
+        INSERT INTO leads (telegram_id, username, type, score, segment)
+        VALUES (?, ?, ?, ?, ?)
     """, (
-        data["telegram_id"],
-        data["username"],
-        data["score"],
-        data["segment"]
+        data.get("telegram_id"),
+        data.get("username"),
+        data.get("type"),
+        data.get("score"),
+        data.get("segment")
     ))
 
     conn.commit()
@@ -42,20 +41,20 @@ def save_lead(data: dict):
 
 
 def get_full_stats():
-    conn = sqlite3.connect(DB_NAME)
-    cur = conn.cursor()
+    conn = sqlite3.connect("leads.db")
+    cursor = conn.cursor()
 
-    cur.execute("SELECT COUNT(*) FROM leads")
-    total = cur.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM leads")
+    total = cursor.fetchone()[0]
 
-    cur.execute("SELECT COUNT(*) FROM leads WHERE segment='VIP'")
-    vip = cur.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM leads WHERE segment='VIP'")
+    vip = cursor.fetchone()[0]
 
-    cur.execute("SELECT COUNT(*) FROM leads WHERE segment='WARM'")
-    warm = cur.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM leads WHERE segment='WARM'")
+    warm = cursor.fetchone()[0]
 
-    cur.execute("SELECT COUNT(*) FROM leads WHERE segment='COLD'")
-    cold = cur.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM leads WHERE segment='COLD'")
+    cold = cursor.fetchone()[0]
 
     conn.close()
 
