@@ -1,9 +1,0 @@
-[build]
-builder = "nixpacks"
-
-[phases.setup]
-nixPkgs = ["python311"]
-git add railway.toml
-git commit -m "force python 3.11"
-git push
-
