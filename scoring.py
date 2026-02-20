@@ -1,29 +1,41 @@
 def calculate_score(data: dict) -> int:
     score = 0
 
-    if data.get("strategy") == "Да":
-        score += 20
+    # стратегия
+    if data.get("strategy") == "Нет":
+        score += 2
     elif data.get("strategy") == "Частично":
-        score += 10
+        score += 1
 
-    if data.get("source") in ["Да, реклама", "Да, соцсети"]:
-        score += 20
+    # канал
+    if data.get("source") == "Нет стабильного канала":
+        score += 2
 
-    if data.get("stability") == "Да":
-        score += 20
+    # стабильность
+    if data.get("stability") == "Нет":
+        score += 2
+    elif data.get("stability") == "Иногда":
+        score += 1
 
-    if data.get("geo") == "Да, продвигаем":
-        score += 20
+    # аналитика
+    if data.get("analytics") == "Нет":
+        score += 2
+    elif data.get("analytics") == "Частично":
+        score += 1
 
-    if data.get("content") == "Да":
-        score += 10
+    # бюджет
+    if data.get("budget") == "Нет":
+        score += 2
+    elif data.get("budget") == "Нестабильный":
+        score += 1
 
     return score
 
 
 def get_segment(score: int) -> str:
-    if score >= 70:
+    if score <= 3:
         return "VIP"
-    elif score >= 40:
+    elif score <= 7:
         return "WARM"
-    return "COLD"
+    else:
+        return "COLD"
