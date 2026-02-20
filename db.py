@@ -1,20 +1,18 @@
-import sqlite3
+import os
+import psycopg2
 
-DB_NAME = "leads.db"
+
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
 
-    # УДАЛЯЕМ таблицу полностью
-    cursor.execute("DROP TABLE IF EXISTS leads")
-
-    # Создаём заново с правильной структурой
     cursor.execute("""
-    CREATE TABLE leads (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        telegram_id INTEGER,
+    CREATE TABLE IF NOT EXISTS leads (
+        id SERIAL PRIMARY KEY,
+        telegram_id BIGINT,
         username TEXT,
         type TEXT,
         role TEXT,
@@ -26,15 +24,16 @@ def init_db():
         score INTEGER,
         segment TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
+    );
     """)
 
     conn.commit()
+    cursor.close()
     conn.close()
 
 
 def save_lead(data):
-    conn = sqlite3.connect(DB_NAME)
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -50,7 +49,8 @@ def save_lead(data):
         budget,
         score,
         segment
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    )
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """, (
         data.get("telegram_id"),
         data.get("username"),
@@ -66,11 +66,12 @@ def save_lead(data):
     ))
 
     conn.commit()
+    cursor.close()
     conn.close()
 
 
 def get_full_stats():
-    conn = sqlite3.connect(DB_NAME)
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
 
     cursor.execute("SELECT COUNT(*) FROM leads")
@@ -85,5 +86,7 @@ def get_full_stats():
     cursor.execute("SELECT COUNT(*) FROM leads WHERE segment = 'COLD'")
     cold = cursor.fetchone()[0]
 
+    cursor.close()
     conn.close()
+
     return total, vip, warm, cold
