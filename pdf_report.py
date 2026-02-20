@@ -1,3 +1,4 @@
+print("PDF VERSION 2 LOADED")
 import os
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, ListFlowable, ListItem
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
