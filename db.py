@@ -1,18 +1,14 @@
-import os
-import psycopg2
-
-
-DATABASE_URL = os.getenv("DATABASE_URL")
+import sqlite3
 
 
 def init_db():
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = sqlite3.connect("leads.db")
     cursor = conn.cursor()
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS leads (
-        id SERIAL PRIMARY KEY,
-        telegram_id BIGINT,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER,
         username TEXT,
         type TEXT,
         role TEXT,
@@ -24,16 +20,15 @@ def init_db():
         score INTEGER,
         segment TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
+    )
     """)
 
     conn.commit()
-    cursor.close()
     conn.close()
 
 
 def save_lead(data):
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = sqlite3.connect("leads.db")
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -50,7 +45,7 @@ def save_lead(data):
         score,
         segment
     )
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         data.get("telegram_id"),
         data.get("username"),
@@ -66,12 +61,11 @@ def save_lead(data):
     ))
 
     conn.commit()
-    cursor.close()
     conn.close()
 
 
 def get_full_stats():
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = sqlite3.connect("leads.db")
     cursor = conn.cursor()
 
     cursor.execute("SELECT COUNT(*) FROM leads")
@@ -86,7 +80,6 @@ def get_full_stats():
     cursor.execute("SELECT COUNT(*) FROM leads WHERE segment = 'COLD'")
     cold = cursor.fetchone()[0]
 
-    cursor.close()
     conn.close()
 
     return total, vip, warm, cold

@@ -1,36 +1,64 @@
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib import colors
+from reportlab.lib.units import mm
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
-from reportlab.lib.styles import getSampleStyleSheet
-
+from reportlab.platypus import ListFlowable
+from reportlab.lib.pagesizes import A4
 import os
 
 
-def generate_pdf(data: dict, segment: str) -> str:
-    filename = f"report_{data.get('telegram_id')}.pdf"
+def generate_pdf(data, segment):
+    file_name = f"report_{data['telegram_id']}.pdf"
+    doc = SimpleDocTemplate(file_name, pagesize=A4)
 
-    doc = SimpleDocTemplate(filename)
     elements = []
 
+    # Регистрируем шрифт
+    font_path = os.path.join("fonts", "DejaVuSans.ttf")
+    pdfmetrics.registerFont(TTFont("DejaVu", font_path))
+
     styles = getSampleStyleSheet()
-    normal = styles["Normal"]
 
-    elements.append(Paragraph("Shift Motion — Диагностика маркетинга", styles["Title"]))
-    elements.append(Spacer(1, 0.5 * inch))
+    normal_style = ParagraphStyle(
+        'NormalRu',
+        parent=styles['Normal'],
+        fontName='DejaVu',
+        fontSize=12,
+        leading=16
+    )
 
-    elements.append(Paragraph(f"Сегмент: {segment}", normal))
-    elements.append(Spacer(1, 0.3 * inch))
+    title_style = ParagraphStyle(
+        'TitleRu',
+        parent=styles['Title'],
+        fontName='DejaVu',
+        fontSize=18,
+        leading=22,
+        textColor=colors.black
+    )
 
-    elements.append(Paragraph("Рекомендации:", styles["Heading2"]))
-    elements.append(Spacer(1, 0.2 * inch))
+    elements.append(Paragraph("Shift Motion — Диагностика маркетинга", title_style))
+    elements.append(Spacer(1, 10))
 
-    elements.append(Paragraph("• Выстроить системную стратегию", normal))
-    elements.append(Paragraph("• Усилить основной канал привлечения", normal))
-    elements.append(Paragraph("• Настроить аналитику", normal))
+    elements.append(Paragraph(f"Сегмент: {segment}", normal_style))
+    elements.append(Spacer(1, 10))
+
+    recommendations = [
+        "Проверить упаковку оффера",
+        "Определить главный канал привлечения",
+        "Зафиксировать бюджет",
+        "Усилить геомаркетинг"
+    ]
+
+    bullet_points = []
+    for rec in recommendations:
+        bullet_points.append(ListItem(Paragraph(rec, normal_style)))
+
+    elements.append(Paragraph("Рекомендации:", normal_style))
+    elements.append(Spacer(1, 5))
+    elements.append(ListFlowable(bullet_points, bulletType='bullet'))
 
     doc.build(elements)
 
-    return filename
+    return file_name
