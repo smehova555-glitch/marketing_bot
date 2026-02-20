@@ -46,6 +46,7 @@ class Diagnostic(StatesGroup):
     stability = State()
     geo = State()
     budget = State()
+    contact = State()   # 🔥 обязательный контакт
 
 
 # =========================
@@ -56,6 +57,19 @@ def kb(options):
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=o)] for o in options],
         resize_keyboard=True
+    )
+
+
+def contact_kb():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(
+                text="📲 Поделиться контактом",
+                request_contact=True
+            )]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
     )
 
 
@@ -196,11 +210,11 @@ async def q_geo(message: Message, state: FSMContext):
 
 
 # =========================
-# FINISH
+# ПЕРЕД КОНТАКТОМ
 # =========================
 
 @dp.message(Diagnostic.budget)
-async def finish(message: Message, state: FSMContext):
+async def finish_before_contact(message: Message, state: FSMContext):
 
     await state.update_data(budget=message.text)
     data = await state.get_data()
@@ -211,20 +225,47 @@ async def finish(message: Message, state: FSMContext):
     score = calculate_score(data)
     segment = get_segment(score)
 
+    await state.update_data(score=score, segment=segment)
+
+    await message.answer(
+        "Чтобы получить персональный PDF-разбор, пожалуйста, поделитесь контактом.",
+        reply_markup=contact_kb()
+    )
+
+    await state.set_state(Diagnostic.contact)
+
+
+# =========================
+# ПОЛУЧЕНИЕ КОНТАКТА
+# =========================
+
+@dp.message(Diagnostic.contact)
+async def receive_contact(message: Message, state: FSMContext):
+
+    if not message.contact:
+        await message.answer("Пожалуйста, используйте кнопку для передачи контакта.")
+        return
+
+    data = await state.get_data()
+
+    phone = message.contact.phone_number
+    data["phone"] = phone
+
+    score = data["score"]
+    segment = data["segment"]
+
     save_lead(data)
 
-    text = generate_recommendations(data, segment)
-    await message.answer(text, reply_markup=ReplyKeyboardRemove())
+    # 🔥 Приоритет
+    if score >= 7:
+        priority = "🔥 HIGH"
+    elif score >= 4:
+        priority = "⚡ MEDIUM"
+    else:
+        priority = "LOW"
 
-    # ===== УВЕДОМЛЕНИЕ В ЛИЧКУ =====
+    # ===== Отправка менеджеру =====
     try:
-        if score >= 7:
-            priority = "🔥 HIGH"
-        elif score >= 4:
-            priority = "⚡ MEDIUM"
-        else:
-            priority = "LOW"
-
         await bot.send_message(
             AGENCY_CHAT_ID,
             f"""🔥 Новый лид — Диагностика Shift Motion
@@ -232,6 +273,10 @@ async def finish(message: Message, state: FSMContext):
 📊 Сегмент: {segment}
 📈 Score: {score}/10
 🎯 Приоритет: {priority}
+
+📞 Телефон: {phone}
+🆔 Telegram ID: {data.get("telegram_id")}
+👤 Username: @{data.get("username")}
 
 🌍 Город: {data.get("city")}
 🏷 Ниша: {data.get("niche")}
@@ -244,7 +289,6 @@ async def finish(message: Message, state: FSMContext):
 📊 Стабильность: {data.get("stability")}
 """
         )
-
     except Exception as e:
         print("ERROR SENDING LEAD:", e)
 
@@ -258,6 +302,11 @@ async def finish(message: Message, state: FSMContext):
         )
 
     await message.answer(
+        "Спасибо! Менеджер свяжется с вами в ближайшее время.",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+    await message.answer(
         "Что делаем дальше?",
         reply_markup=post_pdf_menu()
     )
@@ -266,7 +315,7 @@ async def finish(message: Message, state: FSMContext):
 
 
 # =========================
-# HEALTHCHECK
+# HEALTHCHECK (Render)
 # =========================
 
 async def healthcheck(request):
