@@ -7,9 +7,12 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    # Создание таблицы если её нет
+    # УДАЛЯЕМ таблицу полностью
+    cursor.execute("DROP TABLE IF EXISTS leads")
+
+    # Создаём заново с правильной структурой
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS leads (
+    CREATE TABLE leads (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         telegram_id INTEGER,
         username TEXT,
@@ -25,24 +28,6 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
-
-    conn.commit()
-
-    # ---- МИГРАЦИЯ ----
-    cursor.execute("PRAGMA table_info(leads)")
-    columns = [column[1] for column in cursor.fetchall()]
-
-    if "type" not in columns:
-        cursor.execute("ALTER TABLE leads ADD COLUMN type TEXT")
-
-    if "budget" not in columns:
-        cursor.execute("ALTER TABLE leads ADD COLUMN budget TEXT")
-
-    if "score" not in columns:
-        cursor.execute("ALTER TABLE leads ADD COLUMN score INTEGER")
-
-    if "segment" not in columns:
-        cursor.execute("ALTER TABLE leads ADD COLUMN segment TEXT")
 
     conn.commit()
     conn.close()
