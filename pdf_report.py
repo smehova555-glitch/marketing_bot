@@ -30,11 +30,22 @@ COLOR_BLACK = colors.HexColor("#000000")
 
 def register_fonts():
     try:
-        pdfmetrics.registerFont(TTFont("Jost-Regular", "fonts/Jost-Regular.ttf"))
-        pdfmetrics.registerFont(TTFont("Jost-SemiBold", "fonts/Jost-SemiBold.ttf"))
-        pdfmetrics.registerFont(TTFont("Jost-Bold", "fonts/Jost-Bold.ttf"))
-        print("Jost fonts loaded")
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        fonts_path = os.path.join(base_path, "fonts")
+
+        pdfmetrics.registerFont(
+            TTFont("Jost-Regular", os.path.join(fonts_path, "Jost-Regular.ttf"))
+        )
+        pdfmetrics.registerFont(
+            TTFont("Jost-SemiBold", os.path.join(fonts_path, "Jost-SemiBold.ttf"))
+        )
+        pdfmetrics.registerFont(
+            TTFont("Jost-Bold", os.path.join(fonts_path, "Jost-Bold.ttf"))
+        )
+
+        print("Jost fonts loaded successfully")
         return True
+
     except Exception as e:
         print("Font loading failed:", e)
         return False
