@@ -1,4 +1,4 @@
-.venv
+leads.db
+*.pdf
 __pycache__/
-*.pyc
-leads.dbleads.db
+.env

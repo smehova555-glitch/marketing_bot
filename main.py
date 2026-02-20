@@ -89,6 +89,19 @@ def post_pdf_menu():
 async def start(message: Message, state: FSMContext):
     await state.clear()
 
+    print("START HANDLER TRIGGERED")
+    print("AGENCY_CHAT_ID:", AGENCY_CHAT_ID)
+
+    # ТЕСТ ОТПРАВКИ В ЛИЧКУ
+    try:
+        await bot.send_message(
+            AGENCY_CHAT_ID,
+            f"ТЕСТ: бот может писать вам. Пользователь @{message.from_user.username}"
+        )
+        print("TEST MESSAGE SENT SUCCESSFULLY")
+    except Exception as e:
+        print("ERROR SENDING TEST MESSAGE:", e)
+
     await message.answer(
         "Диагностика маркетинга Shift Motion.\n\nКто вы?",
         reply_markup=kb(["Собственник", "Личный бренд", "Маркетолог"])
@@ -157,6 +170,8 @@ async def q5(message: Message, state: FSMContext):
 
 @dp.message(Diagnostic.budget)
 async def finish(message: Message, state: FSMContext):
+    print("FINISH HANDLER TRIGGERED")
+
     await state.update_data(budget=message.text)
     data = await state.get_data()
 
@@ -171,10 +186,11 @@ async def finish(message: Message, state: FSMContext):
     text = generate_recommendations(data, segment)
     await message.answer(text, reply_markup=ReplyKeyboardRemove())
 
-    # Отправка лида в личный Telegram агентства
-    await bot.send_message(
-        AGENCY_CHAT_ID,
-        f"""🔥 Новый лид
+    # ===== ОТПРАВКА ЛИДА В ЛИЧКУ =====
+    try:
+        await bot.send_message(
+            AGENCY_CHAT_ID,
+            f"""🔥 Новый лид
 
 Сегмент: {segment}
 Score: {score}
@@ -182,9 +198,12 @@ Score: {score}
 User: @{message.from_user.username}
 ID: {message.from_user.id}
 """
-    )
+        )
+        print("LEAD SENT SUCCESSFULLY")
+    except Exception as e:
+        print("ERROR SENDING LEAD:", e)
 
-    # PDF
+    # ===== PDF =====
     pdf_path = generate_pdf(data, segment)
 
     if pdf_path and os.path.exists(pdf_path):
@@ -193,7 +212,7 @@ ID: {message.from_user.id}
             caption="📄 Ваш персональный маркетинговый разбор готов."
         )
 
-    # Кнопки
+    # ===== КНОПКИ =====
     await message.answer(
         "Что делаем дальше?",
         reply_markup=post_pdf_menu()
@@ -206,9 +225,34 @@ ID: {message.from_user.id}
 # RUN
 # =========================
 
+from aiohttp import web
+
+
+async def healthcheck(request):
+    return web.Response(text="Bot is running")
+
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", healthcheck)
+
+    port = int(os.environ.get("PORT", 10000))
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
+    print(f"Web server started on port {port}")
+
+
 async def main():
     init_db()
     print("BOT STARTED")
+
+    # запускаем веб-сервер параллельно
+    asyncio.create_task(start_web_server())
+
     await dp.start_polling(bot)
 
 
