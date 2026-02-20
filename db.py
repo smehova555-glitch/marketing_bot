@@ -1,70 +1,80 @@
 import sqlite3
 
-DB_NAME = "leads_v3.db"
+DB_NAME = "leads.db"
 
-
-# =====================================
-# INIT DB (пересоздание структуры)
-# =====================================
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    # Удаляем старую таблицу (если была старая структура)
-    cursor.execute("DROP TABLE IF EXISTS leads")
-
-    # Создаём новую таблицу
+    # Создание таблицы если её нет
     cursor.execute("""
-        CREATE TABLE leads (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            telegram_id INTEGER,
-            username TEXT,
-            role TEXT,
-            strategy TEXT,
-            source TEXT,
-            stability TEXT,
-            analytics TEXT,
-            budget TEXT,
-            score INTEGER,
-            segment TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
+    CREATE TABLE IF NOT EXISTS leads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER,
+        username TEXT,
+        type TEXT,
+        role TEXT,
+        strategy TEXT,
+        source TEXT,
+        stability TEXT,
+        geo TEXT,
+        budget TEXT,
+        score INTEGER,
+        segment TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
     """)
+
+    conn.commit()
+
+    # ---- МИГРАЦИЯ ----
+    cursor.execute("PRAGMA table_info(leads)")
+    columns = [column[1] for column in cursor.fetchall()]
+
+    if "type" not in columns:
+        cursor.execute("ALTER TABLE leads ADD COLUMN type TEXT")
+
+    if "budget" not in columns:
+        cursor.execute("ALTER TABLE leads ADD COLUMN budget TEXT")
+
+    if "score" not in columns:
+        cursor.execute("ALTER TABLE leads ADD COLUMN score INTEGER")
+
+    if "segment" not in columns:
+        cursor.execute("ALTER TABLE leads ADD COLUMN segment TEXT")
 
     conn.commit()
     conn.close()
 
 
-# =====================================
-# SAVE LEAD
-# =====================================
-
-def save_lead(data: dict):
+def save_lead(data):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT INTO leads (
-            telegram_id,
-            username,
-            role,
-            strategy,
-            source,
-            stability,
-            analytics,
-            budget,
-            score,
-            segment
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO leads (
+        telegram_id,
+        username,
+        type,
+        role,
+        strategy,
+        source,
+        stability,
+        geo,
+        budget,
+        score,
+        segment
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         data.get("telegram_id"),
         data.get("username"),
+        data.get("type"),
         data.get("role"),
         data.get("strategy"),
         data.get("source"),
         data.get("stability"),
-        data.get("analytics"),
+        data.get("geo"),
         data.get("budget"),
         data.get("score"),
         data.get("segment"),
@@ -74,10 +84,6 @@ def save_lead(data: dict):
     conn.close()
 
 
-# =====================================
-# STATS
-# =====================================
-
 def get_full_stats():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -85,15 +91,14 @@ def get_full_stats():
     cursor.execute("SELECT COUNT(*) FROM leads")
     total = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM leads WHERE segment='VIP'")
+    cursor.execute("SELECT COUNT(*) FROM leads WHERE segment = 'VIP'")
     vip = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM leads WHERE segment='WARM'")
+    cursor.execute("SELECT COUNT(*) FROM leads WHERE segment = 'WARM'")
     warm = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM leads WHERE segment='COLD'")
+    cursor.execute("SELECT COUNT(*) FROM leads WHERE segment = 'COLD'")
     cold = cursor.fetchone()[0]
 
     conn.close()
-
     return total, vip, warm, cold
