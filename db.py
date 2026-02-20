@@ -1,19 +1,22 @@
 import sqlite3
 
-
 DB_NAME = "leads.db"
 
 
 # =====================================
-# INIT DB
+# INIT DB (пересоздание структуры)
 # =====================================
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
+    # Удаляем старую таблицу (если была старая структура)
+    cursor.execute("DROP TABLE IF EXISTS leads")
+
+    # Создаём новую таблицу
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS leads (
+        CREATE TABLE leads (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id INTEGER,
             username TEXT,
