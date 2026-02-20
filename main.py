@@ -39,6 +39,8 @@ dp = Dispatcher(storage=MemoryStorage())
 
 class Diagnostic(StatesGroup):
     role = State()
+    city = State()
+    niche = State()
     strategy = State()
     source = State()
     stability = State()
@@ -103,52 +105,93 @@ async def start(message: Message, state: FSMContext):
 # =========================
 
 @dp.message(Diagnostic.role)
-async def q1(message: Message, state: FSMContext):
+async def q_role(message: Message, state: FSMContext):
     await state.update_data(role=message.text)
+
+    await message.answer(
+        "В каком городе или регионе вы работаете?",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+    await state.set_state(Diagnostic.city)
+
+
+@dp.message(Diagnostic.city)
+async def q_city(message: Message, state: FSMContext):
+    await state.update_data(city=message.text)
+
+    await message.answer(
+        "В какой сфере работает ваш бизнес?",
+        reply_markup=kb([
+            "Бьюти / Салон",
+            "Эксперт / Онлайн",
+            "Услуги",
+            "E-commerce",
+            "Производство",
+            "Другое"
+        ])
+    )
+
+    await state.set_state(Diagnostic.niche)
+
+
+@dp.message(Diagnostic.niche)
+async def q_niche(message: Message, state: FSMContext):
+    await state.update_data(niche=message.text)
+
     await message.answer(
         "Есть ли маркетинговая стратегия?",
         reply_markup=kb(["Да", "Частично", "Нет"])
     )
+
     await state.set_state(Diagnostic.strategy)
 
 
 @dp.message(Diagnostic.strategy)
-async def q2(message: Message, state: FSMContext):
+async def q_strategy(message: Message, state: FSMContext):
     await state.update_data(strategy=message.text)
+
     await message.answer(
         "Основной источник заявок?",
         reply_markup=kb(["Реклама", "Соцсети", "Сарафан", "Нестабильно"])
     )
+
     await state.set_state(Diagnostic.source)
 
 
 @dp.message(Diagnostic.source)
-async def q3(message: Message, state: FSMContext):
+async def q_source(message: Message, state: FSMContext):
     await state.update_data(source=message.text)
+
     await message.answer(
         "Есть ли стабильный поток заявок?",
         reply_markup=kb(["Да", "Иногда", "Нет"])
     )
+
     await state.set_state(Diagnostic.stability)
 
 
 @dp.message(Diagnostic.stability)
-async def q4(message: Message, state: FSMContext):
+async def q_stability(message: Message, state: FSMContext):
     await state.update_data(stability=message.text)
+
     await message.answer(
         "Есть ли карточка в Яндекс/2ГИС?",
         reply_markup=kb(["Да, продвигаем", "Есть, но не продвигаем", "Нет"])
     )
+
     await state.set_state(Diagnostic.geo)
 
 
 @dp.message(Diagnostic.geo)
-async def q5(message: Message, state: FSMContext):
+async def q_geo(message: Message, state: FSMContext):
     await state.update_data(geo=message.text)
+
     await message.answer(
         "Какой маркетинговый бюджет в месяц?",
         reply_markup=kb(["до 50 тыс", "50–150 тыс", "150–300 тыс", "300+ тыс"])
     )
+
     await state.set_state(Diagnostic.budget)
 
 
@@ -170,7 +213,6 @@ async def finish(message: Message, state: FSMContext):
 
     save_lead(data)
 
-    # Ответ пользователю
     text = generate_recommendations(data, segment)
     await message.answer(text, reply_markup=ReplyKeyboardRemove())
 
@@ -191,17 +233,15 @@ async def finish(message: Message, state: FSMContext):
 📈 Score: {score}/10
 🎯 Приоритет: {priority}
 
-👤 Профиль:
-Username: @{message.from_user.username}
-Telegram ID: {message.from_user.id}
-Роль: {data.get("role")}
+🌍 Город: {data.get("city")}
+🏷 Ниша: {data.get("niche")}
 
-📊 Маркетинг:
-Стратегия: {data.get("strategy")}
-Источник заявок: {data.get("source")}
-Стабильность: {data.get("stability")}
-Геомаркетинг: {data.get("geo")}
-Бюджет: {data.get("budget")}
+👤 Роль: {data.get("role")}
+💰 Бюджет: {data.get("budget")}
+🧠 Стратегия: {data.get("strategy")}
+📍 Гео: {data.get("geo")}
+📥 Источник: {data.get("source")}
+📊 Стабильность: {data.get("stability")}
 """
         )
 
@@ -217,7 +257,6 @@ Telegram ID: {message.from_user.id}
             caption="📄 Ваш персональный маркетинговый разбор готов."
         )
 
-    # ===== КНОПКИ =====
     await message.answer(
         "Что делаем дальше?",
         reply_markup=post_pdf_menu()
@@ -227,7 +266,7 @@ Telegram ID: {message.from_user.id}
 
 
 # =========================
-# HEALTHCHECK FOR RENDER
+# HEALTHCHECK
 # =========================
 
 async def healthcheck(request):
@@ -245,17 +284,9 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-    print(f"Web server started on port {port}")
-
-
-# =========================
-# RUN
-# =========================
 
 async def main():
     init_db()
-    print("BOT STARTED")
-
     asyncio.create_task(start_web_server())
     await dp.start_polling(bot)
 
