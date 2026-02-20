@@ -1,8 +1,15 @@
 import sqlite3
 
 
+DB_NAME = "leads.db"
+
+
+# =====================================
+# INIT DB
+# =====================================
+
 def init_db():
-    conn = sqlite3.connect("leads.db")
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -10,7 +17,12 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id INTEGER,
             username TEXT,
-            type TEXT,
+            role TEXT,
+            strategy TEXT,
+            source TEXT,
+            stability TEXT,
+            analytics TEXT,
+            budget TEXT,
             score INTEGER,
             segment TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -21,27 +33,50 @@ def init_db():
     conn.close()
 
 
+# =====================================
+# SAVE LEAD
+# =====================================
+
 def save_lead(data: dict):
-    conn = sqlite3.connect("leads.db")
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT INTO leads (telegram_id, username, type, score, segment)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO leads (
+            telegram_id,
+            username,
+            role,
+            strategy,
+            source,
+            stability,
+            analytics,
+            budget,
+            score,
+            segment
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         data.get("telegram_id"),
         data.get("username"),
-        data.get("type"),
+        data.get("role"),
+        data.get("strategy"),
+        data.get("source"),
+        data.get("stability"),
+        data.get("analytics"),
+        data.get("budget"),
         data.get("score"),
-        data.get("segment")
+        data.get("segment"),
     ))
 
     conn.commit()
     conn.close()
 
 
+# =====================================
+# STATS
+# =====================================
+
 def get_full_stats():
-    conn = sqlite3.connect("leads.db")
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
     cursor.execute("SELECT COUNT(*) FROM leads")
