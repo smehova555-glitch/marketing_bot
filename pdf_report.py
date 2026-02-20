@@ -1,34 +1,64 @@
-print("PDF VERSION 2 LOADED")
 import os
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, ListFlowable, ListItem
+from datetime import datetime
+
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Image,
+    ListFlowable,
+    ListItem,
+    HRFlowable
+)
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib import colors
-from reportlab.lib.units import mm
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
-from reportlab.platypus import HRFlowable
-from datetime import datetime
+
+
+print("PDF MODULE LOADED")
 
 
 # ========= BRAND COLORS =========
 
 COLOR_DARK = colors.HexColor("#292b2d")
-COLOR_LIGHT = colors.HexColor("#f6f5ea")
 COLOR_BLUE = colors.HexColor("#024a68")
 COLOR_BLACK = colors.HexColor("#000000")
 
 
+# ========= SAFE FONT REGISTER =========
+
 def register_fonts():
-    pdfmetrics.registerFont(TTFont("Jost-Regular", "fonts/Jost-Regular.ttf"))
-    pdfmetrics.registerFont(TTFont("Jost-SemiBold", "fonts/Jost-SemiBold.ttf"))
-    pdfmetrics.registerFont(TTFont("Jost-Bold", "fonts/Jost-Bold.ttf"))
+    try:
+        pdfmetrics.registerFont(TTFont("Jost-Regular", "fonts/Jost-Regular.ttf"))
+        pdfmetrics.registerFont(TTFont("Jost-SemiBold", "fonts/Jost-SemiBold.ttf"))
+        pdfmetrics.registerFont(TTFont("Jost-Bold", "fonts/Jost-Bold.ttf"))
+        print("Jost fonts loaded")
+        return True
+    except Exception as e:
+        print("Font loading failed:", e)
+        return False
 
 
 def generate_pdf(data: dict, segment: str):
 
-    register_fonts()
+    print("PDF VERSION 3 EXECUTED")
 
-    filename = f"report_{data.get('telegram_id')}.pdf"
+    fonts_loaded = register_fonts()
+
+    # если Jost не загрузился — используем системные шрифты
+    if fonts_loaded:
+        FONT_REG = "Jost-Regular"
+        FONT_SEMI = "Jost-SemiBold"
+        FONT_BOLD = "Jost-Bold"
+    else:
+        FONT_REG = "Helvetica"
+        FONT_SEMI = "Helvetica-Bold"
+        FONT_BOLD = "Helvetica-Bold"
+
+    # уникальное имя (убираем кэш Telegram)
+    filename = f"report_{data.get('telegram_id')}_{int(datetime.now().timestamp())}.pdf"
+
     doc = SimpleDocTemplate(
         filename,
         rightMargin=30,
@@ -38,7 +68,6 @@ def generate_pdf(data: dict, segment: str):
     )
 
     elements = []
-
     styles = getSampleStyleSheet()
 
     # ========= STYLES =========
@@ -46,7 +75,7 @@ def generate_pdf(data: dict, segment: str):
     title_style = ParagraphStyle(
         "TitleStyle",
         parent=styles["Normal"],
-        fontName="Jost-Bold",
+        fontName=FONT_BOLD,
         fontSize=26,
         textColor=COLOR_BLUE,
         spaceAfter=20,
@@ -55,7 +84,7 @@ def generate_pdf(data: dict, segment: str):
     subtitle_style = ParagraphStyle(
         "SubtitleStyle",
         parent=styles["Normal"],
-        fontName="Jost-SemiBold",
+        fontName=FONT_SEMI,
         fontSize=16,
         textColor=COLOR_DARK,
         spaceAfter=10,
@@ -64,25 +93,16 @@ def generate_pdf(data: dict, segment: str):
     normal_style = ParagraphStyle(
         "NormalStyle",
         parent=styles["Normal"],
-        fontName="Jost-Regular",
+        fontName=FONT_REG,
         fontSize=12,
         leading=18,
         textColor=COLOR_BLACK,
     )
 
-    small_style = ParagraphStyle(
-        "SmallStyle",
-        parent=styles["Normal"],
-        fontName="Jost-Regular",
-        fontSize=10,
-        textColor=COLOR_DARK,
-    )
-
     # ========= LOGO =========
 
     if os.path.exists("logo.png"):
-        logo = Image("logo.png", width=120, height=40)
-        elements.append(logo)
+        elements.append(Image("logo.png", width=120, height=40))
         elements.append(Spacer(1, 20))
 
     # ========= COVER =========
@@ -97,7 +117,7 @@ def generate_pdf(data: dict, segment: str):
 
     elements.append(Paragraph(
         f"Дата: {datetime.now().strftime('%d.%m.%Y')}",
-        small_style
+        normal_style
     ))
 
     elements.append(Spacer(1, 30))
@@ -123,7 +143,7 @@ def generate_pdf(data: dict, segment: str):
 
     elements.append(Spacer(1, 30))
 
-    # ========= ANALYSIS =========
+    # ========= WEAKNESSES =========
 
     elements.append(Paragraph("Ключевые зоны роста", subtitle_style))
     elements.append(Spacer(1, 10))
@@ -140,14 +160,15 @@ def generate_pdf(data: dict, segment: str):
         weaknesses.append("Не используется геомаркетинг")
 
     if not weaknesses:
-        weaknesses.append("Системность требует усиления")
+        weaknesses.append("Требуется усиление системности")
 
-    weakness_list = ListFlowable(
-        [ListItem(Paragraph(item, normal_style)) for item in weaknesses],
-        bulletType="bullet"
+    elements.append(
+        ListFlowable(
+            [ListItem(Paragraph(w, normal_style)) for w in weaknesses],
+            bulletType="bullet"
+        )
     )
 
-    elements.append(weakness_list)
     elements.append(Spacer(1, 30))
 
     # ========= RECOMMENDATIONS =========
@@ -157,16 +178,17 @@ def generate_pdf(data: dict, segment: str):
 
     recommendations = [
         "Сформировать стратегию на 3 месяца",
-        "Оптимизировать распределение бюджета",
-        "Усилить каналы с измеримой аналитикой"
+        "Оптимизировать маркетинговый бюджет",
+        "Внедрить измеримую аналитику"
     ]
 
-    rec_list = ListFlowable(
-        [ListItem(Paragraph(item, normal_style)) for item in recommendations],
-        bulletType="1"
+    elements.append(
+        ListFlowable(
+            [ListItem(Paragraph(r, normal_style)) for r in recommendations],
+            bulletType="1"
+        )
     )
 
-    elements.append(rec_list)
     elements.append(Spacer(1, 40))
 
     # ========= CTA =========
@@ -186,8 +208,8 @@ def generate_pdf(data: dict, segment: str):
         normal_style
     ))
 
-    elements.append(Spacer(1, 30))
-
     doc.build(elements)
+
+    print("PDF BUILT:", filename)
 
     return filename
