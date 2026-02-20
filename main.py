@@ -25,6 +25,7 @@ from recommendations import generate_recommendations
 from pdf_report import generate_pdf
 from db import init_db, save_lead
 
+from aiohttp import web
 
 logging.basicConfig(level=logging.INFO)
 
@@ -62,7 +63,7 @@ def post_pdf_menu():
             [
                 InlineKeyboardButton(
                     text="📋 Заполнить бриф",
-                    url="https://docs.google.com/document/d/1E5p85-RmJdx4rxQB9vj0GBIMY_mqRSxI/edit"
+                    url="https://shiftmotion.ru/brief"
                 )
             ],
             [
@@ -88,19 +89,6 @@ def post_pdf_menu():
 @dp.message(CommandStart())
 async def start(message: Message, state: FSMContext):
     await state.clear()
-
-    print("START HANDLER TRIGGERED")
-    print("AGENCY_CHAT_ID:", AGENCY_CHAT_ID)
-
-    # ТЕСТ ОТПРАВКИ В ЛИЧКУ
-    try:
-        await bot.send_message(
-            AGENCY_CHAT_ID,
-            f"ТЕСТ: бот может писать вам. Пользователь @{message.from_user.username}"
-        )
-        print("TEST MESSAGE SENT SUCCESSFULLY")
-    except Exception as e:
-        print("ERROR SENDING TEST MESSAGE:", e)
 
     await message.answer(
         "Диагностика маркетинга Shift Motion.\n\nКто вы?",
@@ -170,7 +158,6 @@ async def q5(message: Message, state: FSMContext):
 
 @dp.message(Diagnostic.budget)
 async def finish(message: Message, state: FSMContext):
-    print("FINISH HANDLER TRIGGERED")
 
     await state.update_data(budget=message.text)
     data = await state.get_data()
@@ -183,23 +170,41 @@ async def finish(message: Message, state: FSMContext):
 
     save_lead(data)
 
+    # Ответ пользователю
     text = generate_recommendations(data, segment)
     await message.answer(text, reply_markup=ReplyKeyboardRemove())
 
-    # ===== ОТПРАВКА ЛИДА В ЛИЧКУ =====
+    # ===== УВЕДОМЛЕНИЕ В ЛИЧКУ =====
     try:
+        if score >= 7:
+            priority = "🔥 HIGH"
+        elif score >= 4:
+            priority = "⚡ MEDIUM"
+        else:
+            priority = "LOW"
+
         await bot.send_message(
             AGENCY_CHAT_ID,
-            f"""🔥 Новый лид
+            f"""🔥 Новый лид — Диагностика Shift Motion
 
-Сегмент: {segment}
-Score: {score}
+📊 Сегмент: {segment}
+📈 Score: {score}/10
+🎯 Приоритет: {priority}
 
-User: @{message.from_user.username}
-ID: {message.from_user.id}
+👤 Профиль:
+Username: @{message.from_user.username}
+Telegram ID: {message.from_user.id}
+Роль: {data.get("role")}
+
+📊 Маркетинг:
+Стратегия: {data.get("strategy")}
+Источник заявок: {data.get("source")}
+Стабильность: {data.get("stability")}
+Геомаркетинг: {data.get("geo")}
+Бюджет: {data.get("budget")}
 """
         )
-        print("LEAD SENT SUCCESSFULLY")
+
     except Exception as e:
         print("ERROR SENDING LEAD:", e)
 
@@ -222,11 +227,8 @@ ID: {message.from_user.id}
 
 
 # =========================
-# RUN
+# HEALTHCHECK FOR RENDER
 # =========================
-
-from aiohttp import web
-
 
 async def healthcheck(request):
     return web.Response(text="Bot is running")
@@ -246,13 +248,15 @@ async def start_web_server():
     print(f"Web server started on port {port}")
 
 
+# =========================
+# RUN
+# =========================
+
 async def main():
     init_db()
     print("BOT STARTED")
 
-    # запускаем веб-сервер параллельно
     asyncio.create_task(start_web_server())
-
     await dp.start_polling(bot)
 
 
