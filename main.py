@@ -12,7 +12,7 @@ from aiogram.types import (
     ReplyKeyboardRemove,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-    FSInputFile
+    BufferedInputFile
 )
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
@@ -34,10 +34,6 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 
-# =========================
-# STATES
-# =========================
-
 class Diagnostic(StatesGroup):
     role = State()
     city = State()
@@ -49,10 +45,6 @@ class Diagnostic(StatesGroup):
     budget = State()
     contact = State()
 
-
-# =========================
-# KEYBOARDS
-# =========================
 
 def kb(options):
     return ReplyKeyboardMarkup(
@@ -78,10 +70,6 @@ def post_pdf_menu():
         ]
     )
 
-
-# =========================
-# FLOW
-# =========================
 
 @dp.message(CommandStart())
 async def start(message: Message, state: FSMContext):
@@ -157,6 +145,9 @@ async def finish_before_contact(message: Message, state: FSMContext):
     await state.update_data(budget=message.text)
     data = await state.get_data()
 
+    data["telegram_id"] = message.from_user.id
+    data["username"] = message.from_user.username
+
     score = calculate_score(data)
     segment = get_segment(score)
 
@@ -182,44 +173,51 @@ async def receive_contact(message: Message, state: FSMContext):
 
     save_lead(data)
 
-    # Отправка менеджеру
-    try:
-        await bot.send_message(
-            AGENCY_CHAT_ID,
-            f"""🔥 Новый лид
+    score = data.get("score", 0)
+
+    if score >= 7:
+        priority = "🔥 HIGH"
+    elif score >= 4:
+        priority = "⚡ MEDIUM"
+    else:
+        priority = "LOW"
+
+    await bot.send_message(
+        AGENCY_CHAT_ID,
+        f"""🔥 Новый лид — Диагностика Shift Motion
 
 📊 Сегмент: {data.get("segment")}
-📈 Score: {data.get("score")}
+📈 Score: {score}/10
+🎯 Приоритет: {priority}
 
 📞 Телефон: {phone}
-🆔 Telegram ID: {message.from_user.id}
-👤 Username: @{message.from_user.username}
+🆔 Telegram ID: {data.get("telegram_id")}
+👤 Username: @{data.get("username")}
+
+🌍 Город: {data.get("city")}
+🏷 Ниша: {data.get("niche")}
+
+👤 Роль: {data.get("role")}
+💰 Бюджет: {data.get("budget")}
+🧠 Стратегия: {data.get("strategy")}
+📍 Гео: {data.get("geo")}
+📥 Источник: {data.get("source")}
+📊 Стабильность: {data.get("stability")}
 """
-        )
-    except Exception as e:
-        print("ERROR SENDING LEAD:", e)
+    )
 
-    # PDF
-    try:
-        pdf_path = generate_pdf(data, data["segment"], message.from_user.id)
+    pdf_buffer = generate_pdf(data, data["segment"])
 
-        if pdf_path and os.path.exists(pdf_path):
-            await message.answer_document(
-                FSInputFile(os.path.abspath(pdf_path)),
-                caption="📄 Ваш персональный маркетинговый разбор готов."
-            )
-    except Exception as e:
-        print("PDF ERROR:", e)
+    await message.answer_document(
+        BufferedInputFile(pdf_buffer.read(), filename="marketing_report.pdf"),
+        caption="📄 Ваш персональный маркетинговый разбор готов."
+    )
 
     await message.answer("Спасибо! Менеджер свяжется с вами.", reply_markup=ReplyKeyboardRemove())
     await message.answer("Что делаем дальше?", reply_markup=post_pdf_menu())
 
     await state.clear()
 
-
-# =========================
-# WEBHOOK INIT
-# =========================
 
 async def on_startup(bot: Bot):
     await bot.delete_webhook(drop_pending_updates=True)
@@ -229,14 +227,10 @@ async def on_startup(bot: Bot):
 
 def main():
     init_db()
-
     app = web.Application()
-
     dp.startup.register(on_startup)
-
     SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
     setup_application(app, dp, bot=bot)
-
     port = int(os.environ.get("PORT", 10000))
     web.run_app(app, host="0.0.0.0", port=port)
 

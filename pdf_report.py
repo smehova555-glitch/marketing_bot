@@ -1,29 +1,61 @@
-import os
-import time
+from io import BytesIO
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfbase import pdfmetrics
 
-def generate_pdf(data, segment, user_id):
-    timestamp = int(time.time())
-    filename = f"report_{user_id}_{timestamp}.pdf"
 
-    content = f"""
-Shift Motion — Персональный разбор
+def generate_pdf(data, segment):
+    buffer = BytesIO()
 
-Сегмент: {segment}
+    # Поддержка кириллицы
+    pdfmetrics.registerFont(UnicodeCIDFont('HYSMyeongJo-Medium'))
 
-Город: {data.get("city")}
-Ниша: {data.get("niche")}
-Роль: {data.get("role")}
-Бюджет: {data.get("budget")}
-Стратегия: {data.get("strategy")}
-Гео: {data.get("geo")}
-Источник: {data.get("source")}
-Стабильность: {data.get("stability")}
-Телефон: {data.get("phone")}
-"""
+    doc = SimpleDocTemplate(buffer)
 
-    with open(filename, "w", encoding="utf-8") as f:
-        f.write(content)
+    styles = getSampleStyleSheet()
+    normal_style = ParagraphStyle(
+        'NormalUnicode',
+        parent=styles['Normal'],
+        fontName='HYSMyeongJo-Medium'
+    )
 
-    print("PDF BUILT:", filename)
+    elements = []
 
-    return filename
+    elements.append(Paragraph("Shift Motion — Персональный разбор", normal_style))
+    elements.append(Spacer(1, 0.3 * inch))
+
+    score = data.get("score", 0)
+
+    if score >= 7:
+        priority = "HIGH"
+    elif score >= 4:
+        priority = "MEDIUM"
+    else:
+        priority = "LOW"
+
+    lines = [
+        f"Сегмент: {segment}",
+        f"Score: {score}/10",
+        f"Приоритет: {priority}",
+        "",
+        f"Город: {data.get('city')}",
+        f"Ниша: {data.get('niche')}",
+        f"Роль: {data.get('role')}",
+        f"Бюджет: {data.get('budget')}",
+        f"Стратегия: {data.get('strategy')}",
+        f"Гео: {data.get('geo')}",
+        f"Источник: {data.get('source')}",
+        f"Стабильность: {data.get('stability')}",
+        f"Телефон: {data.get('phone')}",
+    ]
+
+    for line in lines:
+        elements.append(Paragraph(line, normal_style))
+        elements.append(Spacer(1, 0.2 * inch))
+
+    doc.build(elements)
+
+    buffer.seek(0)
+    return buffer
