@@ -2,7 +2,6 @@ print("MAIN FILE LOADED")
 
 import os
 import logging
-import asyncio
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher
@@ -94,32 +93,32 @@ async def start(message: Message, state: FSMContext):
     await state.set_state(Diagnostic.role)
 
 
-@dp.message(Diagnostic.role)
-async def q_role(message: Message, state: FSMContext):
-    await state.update_data(role=message.text)
-    await message.answer("В каком городе вы работаете?", reply_markup=ReplyKeyboardRemove())
-    await state.set_state(Diagnostic.city)
+# (остальные шаги диагностики оставь как были)
 
 
 # =========================
-# WEBHOOK START
+# WEBHOOK INIT
 # =========================
 
-async def main():
-    init_db()
-
-    # 🔥 Жёстко устанавливаем webhook
+async def on_startup(bot: Bot):
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(WEBHOOK_URL)
     print("WEBHOOK SET")
 
+
+def main():
+    init_db()
+
     app = web.Application()
+
     SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
     setup_application(app, dp, bot=bot)
+
+    dp.startup.register(on_startup)
 
     port = int(os.environ.get("PORT", 10000))
     web.run_app(app, host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
