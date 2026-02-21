@@ -4,6 +4,7 @@ import asyncio
 import os
 import logging
 
+from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.types import (
     Message,
@@ -25,6 +26,9 @@ from pdf_report import generate_pdf
 from db import init_db, save_lead
 
 logging.basicConfig(level=logging.INFO)
+
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_URL = "https://marketing-bot-tb33.onrender.com/webhook"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -159,13 +163,8 @@ async def q_geo(message: Message, state: FSMContext):
     await state.set_state(Diagnostic.budget)
 
 
-# =========================
-# BEFORE CONTACT
-# =========================
-
 @dp.message(Diagnostic.budget)
 async def finish_before_contact(message: Message, state: FSMContext):
-
     await state.update_data(budget=message.text)
     data = await state.get_data()
 
@@ -182,10 +181,6 @@ async def finish_before_contact(message: Message, state: FSMContext):
     await state.set_state(Diagnostic.contact)
 
 
-# =========================
-# RECEIVE CONTACT
-# =========================
-
 @dp.message(Diagnostic.contact)
 async def receive_contact(message: Message, state: FSMContext):
 
@@ -199,29 +194,6 @@ async def receive_contact(message: Message, state: FSMContext):
 
     save_lead(data)
 
-    # ===== Отправка менеджеру =====
-    try:
-        await bot.send_message(
-            AGENCY_CHAT_ID,
-            f"""🔥 Новый лид — Диагностика Shift Motion
-
-📊 Сегмент: {data.get("segment")}
-📈 Score: {data.get("score")}/10
-
-📞 Телефон: {phone}
-🆔 Telegram ID: {message.from_user.id}
-👤 Username: @{message.from_user.username}
-
-🌍 Город: {data.get("city")}
-🏷 Ниша: {data.get("niche")}
-👤 Роль: {data.get("role")}
-💰 Бюджет: {data.get("budget")}
-"""
-        )
-    except Exception as e:
-        print("ERROR SENDING LEAD:", e)
-
-    # ===== PDF =====
     pdf_path = generate_pdf(data, data["segment"], message.from_user.id)
 
     if pdf_path and os.path.exists(pdf_path):
@@ -237,14 +209,31 @@ async def receive_contact(message: Message, state: FSMContext):
 
 
 # =========================
-# MAIN
+# WEBHOOK SERVER
 # =========================
 
-async def main():
+async def on_startup(app):
+    await bot.set_webhook(WEBHOOK_URL)
+    print("WEBHOOK SET")
+
+
+async def on_shutdown(app):
+    await bot.delete_webhook()
+    print("WEBHOOK DELETED")
+
+
+def main():
     init_db()
-    print("STARTING POLLING")
-    await dp.start_polling(bot)
+
+    app = web.Application()
+    dp.register(app, path=WEBHOOK_PATH)
+
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
+
+    port = int(os.environ.get("PORT", 10000))
+    web.run_app(app, host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
