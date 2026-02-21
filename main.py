@@ -19,6 +19,7 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.state import StatesGroup, State
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 from config import BOT_TOKEN, AGENCY_USERNAME, AGENCY_CHAT_ID
 from scoring import calculate_score, get_segment
@@ -91,17 +92,15 @@ def post_pdf_menu():
 @dp.message(CommandStart())
 async def start(message: Message, state: FSMContext):
     await state.clear()
-
     await message.answer(
         "Диагностика маркетинга Shift Motion.\n\nКто вы?",
         reply_markup=kb(["Собственник", "Личный бренд", "Маркетолог"])
     )
-
     await state.set_state(Diagnostic.role)
 
 
 # =========================
-# QUESTIONS
+# QUESTION FLOW
 # =========================
 
 @dp.message(Diagnostic.role)
@@ -177,13 +176,11 @@ async def finish_before_contact(message: Message, state: FSMContext):
         "Чтобы получить персональный PDF-разбор, пожалуйста, поделитесь контактом.",
         reply_markup=contact_kb()
     )
-
     await state.set_state(Diagnostic.contact)
 
 
 @dp.message(Diagnostic.contact)
 async def receive_contact(message: Message, state: FSMContext):
-
     if not message.contact:
         await message.answer("Пожалуйста, используйте кнопку для передачи контакта.")
         return
@@ -209,27 +206,21 @@ async def receive_contact(message: Message, state: FSMContext):
 
 
 # =========================
-# WEBHOOK SERVER
+# WEBHOOK START
 # =========================
 
-async def on_startup(app):
+async def on_startup(bot: Bot):
     await bot.set_webhook(WEBHOOK_URL)
     print("WEBHOOK SET")
-
-
-async def on_shutdown(app):
-    await bot.delete_webhook()
-    print("WEBHOOK DELETED")
 
 
 def main():
     init_db()
 
     app = web.Application()
-    dp.register(app, path=WEBHOOK_PATH)
 
-    app.on_startup.append(on_startup)
-    app.on_shutdown.append(on_shutdown)
+    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
+    setup_application(app, dp, bot=bot)
 
     port = int(os.environ.get("PORT", 10000))
     web.run_app(app, host="0.0.0.0", port=port)
