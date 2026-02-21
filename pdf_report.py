@@ -1,30 +1,37 @@
 from io import BytesIO
+import os
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
 
 
 def generate_pdf(data, segment):
+
     buffer = BytesIO()
 
-    # Поддержка кириллицы
-    pdfmetrics.registerFont(UnicodeCIDFont('HYSMyeongJo-Medium'))
+    # Путь к шрифту
+    font_path = os.path.join(os.getcwd(), "fonts", "Jost-Regular.ttf")
+
+    # Регистрируем фирменный шрифт
+    pdfmetrics.registerFont(TTFont("Jost", font_path))
 
     doc = SimpleDocTemplate(buffer)
-
     styles = getSampleStyleSheet()
-    normal_style = ParagraphStyle(
-        'NormalUnicode',
+
+    brand_style = ParagraphStyle(
+        'BrandStyle',
         parent=styles['Normal'],
-        fontName='HYSMyeongJo-Medium'
+        fontName='Jost',
+        fontSize=12,
+        leading=16
     )
 
     elements = []
 
-    elements.append(Paragraph("Shift Motion — Персональный разбор", normal_style))
-    elements.append(Spacer(1, 0.3 * inch))
+    elements.append(Paragraph("Shift Motion — Персональный разбор", brand_style))
+    elements.append(Spacer(1, 0.4 * inch))
 
     score = data.get("score", 0)
 
@@ -52,8 +59,8 @@ def generate_pdf(data, segment):
     ]
 
     for line in lines:
-        elements.append(Paragraph(line, normal_style))
-        elements.append(Spacer(1, 0.2 * inch))
+        elements.append(Paragraph(line, brand_style))
+        elements.append(Spacer(1, 0.25 * inch))
 
     doc.build(elements)
 
