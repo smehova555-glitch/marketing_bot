@@ -11,27 +11,36 @@ def generate_pdf(data, segment):
 
     buffer = BytesIO()
 
-    # Путь к шрифту
-    font_path = os.path.join(os.getcwd(), "fonts", "Jost-Regular.ttf")
+    base_path = os.getcwd()
+    regular_font = os.path.join(base_path, "fonts", "Jost-Regular.ttf")
+    bold_font = os.path.join(base_path, "fonts", "Jost-Bold.ttf")
 
-    # Регистрируем фирменный шрифт
-    pdfmetrics.registerFont(TTFont("Jost", font_path))
+    pdfmetrics.registerFont(TTFont("Jost-Regular", regular_font))
+    pdfmetrics.registerFont(TTFont("Jost-Bold", bold_font))
 
     doc = SimpleDocTemplate(buffer)
     styles = getSampleStyleSheet()
 
-    brand_style = ParagraphStyle(
-        'BrandStyle',
+    title_style = ParagraphStyle(
+        'TitleBrand',
         parent=styles['Normal'],
-        fontName='Jost',
+        fontName='Jost-Bold',
+        fontSize=18,
+        leading=22
+    )
+
+    text_style = ParagraphStyle(
+        'TextBrand',
+        parent=styles['Normal'],
+        fontName='Jost-Regular',
         fontSize=12,
         leading=16
     )
 
     elements = []
 
-    elements.append(Paragraph("Shift Motion — Персональный разбор", brand_style))
-    elements.append(Spacer(1, 0.4 * inch))
+    elements.append(Paragraph("Shift Motion — Персональный разбор", title_style))
+    elements.append(Spacer(1, 0.5 * inch))
 
     score = data.get("score", 0)
 
@@ -59,8 +68,8 @@ def generate_pdf(data, segment):
     ]
 
     for line in lines:
-        elements.append(Paragraph(line, brand_style))
-        elements.append(Spacer(1, 0.25 * inch))
+        elements.append(Paragraph(line, text_style))
+        elements.append(Spacer(1, 0.3 * inch))
 
     doc.build(elements)
 
