@@ -1,9 +1,15 @@
+# =========================
+# MAIN.PY — ПОЛНАЯ ВЕРСИЯ (ФИНАЛ)
+# ✅ Сегмент НЕ показываем клиенту нигде
+# ✅ Сегмент остаётся только в сообщении менеджеру (AGENCY_CHAT_ID)
+# ✅ 2 кнопки после PDF + кейсы текстом
+# =========================
+
 print("MAIN FILE LOADED")
 
 import os
 import logging
 from datetime import datetime
-
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher
@@ -36,6 +42,9 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 
+# =========================
+# STATES
+# =========================
 class Diagnostic(StatesGroup):
     role = State()
     city = State()
@@ -48,6 +57,9 @@ class Diagnostic(StatesGroup):
     contact = State()
 
 
+# =========================
+# UI HELPERS
+# =========================
 def kb(options):
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=o)] for o in options],
@@ -63,29 +75,20 @@ def contact_kb():
     )
 
 
+# ✅ Только 2 кнопки: написать + бриф
 def post_pdf_menu():
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📋 Заполнить бриф", url="https://shiftmotion.ru/brief")],
-            [InlineKeyboardButton(text="📅 Записаться", url=f"https://t.me/{AGENCY_USERNAME}")],
-            [InlineKeyboardButton(text="📂 Кейсы", url="https://shiftmotion.ru/cases")]
+            [InlineKeyboardButton(text="📩 Написать в Shift Motion", url=f"https://t.me/{AGENCY_USERNAME}")],
+            [InlineKeyboardButton(text="📋 Заполнить бриф", url="https://shiftmotion.ru/brief")]
         ]
     )
 
 
-def quick_cta_menu():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📅 Записаться на 30 минут", url=f"https://t.me/{AGENCY_USERNAME}")],
-            [InlineKeyboardButton(text="📋 Заполнить бриф (если хотите агентство)", url="https://shiftmotion.ru/brief")],
-        ]
-    )
-
-
-def leadgen_followup_text(score: int, segment: str) -> str:
-    """
-    Прогрев после PDF от лица агентства (тон 'мы').
-    """
+# =========================
+# LEADGEN FOLLOW-UP (тон "мы") — БЕЗ СЕГМЕНТА
+# =========================
+def leadgen_followup_text(score: int) -> str:
     if score >= 7:
         level = "сильная база"
         pain = "Сейчас логичнее всего докрутить конверсию и усилить 1–2 канала, чтобы масштабировать без хаоса."
@@ -100,13 +103,16 @@ def leadgen_followup_text(score: int, segment: str) -> str:
         offer = "За 30 минут мы покажем 3 быстрые правки, которые дадут первые обращения."
 
     return (
-        f"Короткий вывод по результату: *{score}/10* (сегмент: *{segment}*).\n"
+        f"Короткий вывод по результату: *{score}/10*.\n"
         f"Уровень: *{level}*.\n\n"
         f"{pain}\n\n"
         f"{offer}"
     )
 
 
+# =========================
+# FLOW
+# =========================
 @dp.message(CommandStart())
 async def start(message: Message, state: FSMContext):
     await state.clear()
@@ -165,14 +171,20 @@ async def q_source(message: Message, state: FSMContext):
 @dp.message(Diagnostic.stability)
 async def q_stability(message: Message, state: FSMContext):
     await state.update_data(stability=message.text)
-    await message.answer("Есть ли карточка в Яндекс/2ГИС?", reply_markup=kb(["Да, продвигаем", "Есть, но не продвигаем", "Нет"]))
+    await message.answer(
+        "Есть ли карточка в Яндекс/2ГИС?",
+        reply_markup=kb(["Да, продвигаем", "Есть, но не продвигаем", "Нет"])
+    )
     await state.set_state(Diagnostic.geo)
 
 
 @dp.message(Diagnostic.geo)
 async def q_geo(message: Message, state: FSMContext):
     await state.update_data(geo=message.text)
-    await message.answer("Какой маркетинговый бюджет в месяц?", reply_markup=kb(["до 50 тыс", "50–150 тыс", "150–300 тыс", "300+ тыс"]))
+    await message.answer(
+        "Какой маркетинговый бюджет в месяц?",
+        reply_markup=kb(["до 50 тыс", "50–150 тыс", "150–300 тыс", "300+ тыс"])
+    )
     await state.set_state(Diagnostic.budget)
 
 
@@ -188,6 +200,7 @@ async def finish_before_contact(message: Message, state: FSMContext):
     score = calculate_score(data)
     segment = get_segment(score)
 
+    # сохраняем в state для менеджеров/внутренней логики
     await state.update_data(score=score, segment=segment, brand="Shift Motion")
 
     await message.answer(
@@ -211,7 +224,7 @@ async def receive_contact(message: Message, state: FSMContext):
     save_lead(data)
 
     score = int(data.get("score", 0) or 0)
-    segment = data.get("segment", "—")
+    segment = data.get("segment", "—")  # ✅ сегмент только для менеджера
 
     if score >= 7:
         priority = "🔥 HIGH"
@@ -220,6 +233,7 @@ async def receive_contact(message: Message, state: FSMContext):
     else:
         priority = "LOW"
 
+    # ✅ Уведомление менеджеру (сегмент оставляем)
     await bot.send_message(
         AGENCY_CHAT_ID,
         f"""🔥 Новый лид — Диагностика Shift Motion
@@ -246,6 +260,7 @@ async def receive_contact(message: Message, state: FSMContext):
 
     # --- PDF (safe) ---
     try:
+        # segment передаём в generate_pdf по сигнатуре, но в клиентском PDF он НЕ выводится
         pdf_buffer = generate_pdf(data, segment)
         dt = datetime.now().strftime("%Y-%m-%d")
         filename = f"ShiftMotion_report_{dt}.pdf"
@@ -261,18 +276,20 @@ async def receive_contact(message: Message, state: FSMContext):
             "Мы уже получили ваши ответы — мы свяжемся с вами и пришлём разбор."
         )
 
-    # --- Leadgen upgrade (we-tone) ---
+    # --- One screen CTA: 2 buttons + cases text (no segment) ---
+    cases_line = "Кейсы: shiftmotion.ru/cases"
     await message.answer(
-        leadgen_followup_text(score, segment),
+        leadgen_followup_text(score) + f"\n\n{cases_line}",
         parse_mode="Markdown",
-        reply_markup=quick_cta_menu()
+        reply_markup=post_pdf_menu()
     )
-
-    await message.answer("Что делаем дальше?", reply_markup=post_pdf_menu())
 
     await state.clear()
 
 
+# =========================
+# WEBHOOK
+# =========================
 async def on_startup(bot: Bot):
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(WEBHOOK_URL)
