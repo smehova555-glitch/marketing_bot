@@ -89,23 +89,28 @@ def _make_onpage(logo_reader, font_bold: str):
         canvas.setFillColor(BRAND_TEAL)
         canvas.rect(0, A4[1] - bar_h, A4[0], bar_h, stroke=0, fill=1)
 
-        # лого
+        # лого (2 попытки: без mask и fallback)
         if logo_reader is not None:
+            x = doc.leftMargin
+            y = A4[1] - bar_h + 2.5 * mm
             try:
-                x = doc.leftMargin
-                y = A4[1] - bar_h + 2.5 * mm
-                # чуть больше + безопаснее по видимости
                 canvas.drawImage(
                     logo_reader,
                     x, y,
                     width=42 * mm,
                     height=11 * mm,
-                    preserveAspectRatio=True,
-                    mask="auto"
+                    preserveAspectRatio=True
                 )
             except Exception:
-                # если отрисовка лого падает — просто не роняем PDF
-                pass
+                try:
+                    canvas.drawImage(
+                        logo_reader,
+                        x, y,
+                        width=42 * mm,
+                        height=11 * mm
+                    )
+                except Exception:
+                    pass
 
         # номер страницы
         canvas.setFillColor(BRAND_GRAPHITE)
@@ -125,7 +130,9 @@ def generate_pdf(data: Dict[str, Any], segment: str):
     """
 
     buffer = BytesIO()
-    base_path = os.getcwd()
+
+    # ✅ ВАЖНО: берём путь от файла, а не от текущей директории процесса (Render!)
+    base_path = os.path.dirname(os.path.abspath(__file__))
 
     # fonts
     reg = os.path.join(base_path, "fonts", "Jost-Regular.ttf")
