@@ -1,6 +1,6 @@
 from io import BytesIO
 import os
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -19,7 +19,6 @@ BRAND_GRAPHITE = colors.HexColor("#292b2d")
 BRAND_CREAM = colors.HexColor("#f6f5ea")
 BRAND_TEAL = colors.HexColor("#024a68")
 BORDER = colors.HexColor("#D6D3C8")
-GREY_200 = colors.HexColor("#E5E7EB")
 
 LOGO_PATH = os.path.join("assets", "shift_logo.png")
 
@@ -27,9 +26,6 @@ LOGO_PATH = os.path.join("assets", "shift_logo.png")
 # =========================
 # Helpers
 # =========================
-def _safe(v, default="—"):
-    return default if not v else str(v)
-
 def _loss_range(score: int) -> str:
     if score <= 3:
         return "25–45%"
@@ -38,10 +34,27 @@ def _loss_range(score: int) -> str:
     return "8–20%"
 
 
+def _progress_bar(score: int, width=160*mm, height=7*mm):
+    score = max(0, min(10, score))
+    fill = width * (score / 10)
+    empty = width - fill
+
+    t = Table([["", ""]], colWidths=[fill, empty], rowHeights=[height])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, 0), BRAND_TEAL),
+        ("BACKGROUND", (1, 0), (1, 0), colors.HexColor("#E5E7EB")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return t
+
+
 # =========================
-# HEADER
+# Header
 # =========================
-def _make_onpage(logo_reader, font_bold):
+def _make_onpage(logo_reader, font_bold: str):
     def _on_page(canvas, doc):
         canvas.saveState()
 
@@ -50,28 +63,23 @@ def _make_onpage(logo_reader, font_bold):
         canvas.rect(0, 0, A4[0], A4[1], stroke=0, fill=1)
 
         # верхняя полоса
-        bar_h = 18 * mm
+        bar_h = 20 * mm
         canvas.setFillColor(BRAND_TEAL)
         canvas.rect(0, A4[1] - bar_h, A4[0], bar_h, stroke=0, fill=1)
 
-        # лого
+        # увеличенный логотип
         if logo_reader:
-            img_w, img_h = logo_reader.getSize()
-            ratio = img_w / img_h if img_h else 3
-            h = 10 * mm
-            w = h * ratio
-
             canvas.drawImage(
                 logo_reader,
                 doc.leftMargin,
-                A4[1] - bar_h + (bar_h - h) / 2,
-                width=w,
-                height=h,
+                A4[1] - bar_h + 3 * mm,
+                height=14 * mm,
                 preserveAspectRatio=True,
                 mask="auto"
             )
 
         canvas.restoreState()
+
     return _on_page
 
 
@@ -98,15 +106,18 @@ def generate_pdf(data: Dict[str, Any], segment: str):
 
     # Logo
     logo_abs = os.path.join(base_path, LOGO_PATH)
-    logo_reader = ImageReader(logo_abs) if os.path.exists(logo_abs) else None
+    logo_reader = None
+    if os.path.exists(logo_abs):
+        logo_reader = ImageReader(logo_abs)
 
+    # Doc
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
         leftMargin=22 * mm,
         rightMargin=22 * mm,
-        topMargin=32 * mm,
-        bottomMargin=20 * mm,
+        topMargin=30 * mm,
+        bottomMargin=22 * mm,
     )
 
     styles = getSampleStyleSheet()
@@ -115,8 +126,8 @@ def generate_pdf(data: Dict[str, Any], segment: str):
         "Title",
         parent=styles["Normal"],
         fontName=FONT_BOLD,
-        fontSize=22,
-        leading=26,
+        fontSize=21,
+        leading=25,
         textColor=BRAND_GRAPHITE,
     )
 
@@ -124,87 +135,76 @@ def generate_pdf(data: Dict[str, Any], segment: str):
         "Body",
         parent=styles["Normal"],
         fontName=FONT_REG,
-        fontSize=13,     # 🔥 крупнее
-        leading=19,
+        fontSize=13,
+        leading=18,
         textColor=BRAND_GRAPHITE,
-        wordWrap="CJK",
     )
 
-    muted = ParagraphStyle(
-        "Muted",
+    strong = ParagraphStyle(
+        "Strong",
         parent=body,
-        fontSize=12,
-        textColor=colors.HexColor("#5B5F62"),
+        fontName=FONT_BOLD,
     )
 
-    elements: List[Any] = []
-
-    # ===== DATA =====
-    score = int(data.get("score", 0) or 0)
+    score = int(data.get("score", 0))
     loss = _loss_range(score)
 
-    city = _safe(data.get("city"))
-    niche = _safe(data.get("niche"))
-    budget = _safe(data.get("budget"))
-    source = _safe(data.get("source"))
-    stability = _safe(data.get("stability"))
-    geo = _safe(data.get("geo"))
+    elements = []
 
-    width = A4[0] - doc.leftMargin - doc.rightMargin
-
-    # ===== TITLE =====
-    elements.append(Paragraph("Маркетинговая диагностика", title))
+    # Заголовок
+    elements.append(Paragraph(
+        "Маркетинговая диагностика от коммуникационного агентства Shift Motion",
+        title
+    ))
     elements.append(Spacer(1, 10 * mm))
 
-    # ===== RESULT BLOCK =====
-    elements.append(Paragraph(f"<b>{score}/10</b> — потенциал роста не реализован полностью.", body))
-    elements.append(Paragraph(f"Оценка потерь: <b>{loss}</b> обращений.", body))
-    elements.append(Spacer(1, 8 * mm))
-
-    # ===== META (компактно, 2 колонки) =====
-    meta_rows = [
-        ["Город", city],
-        ["Ниша", niche],
-        ["Бюджет", budget],
-        ["Источник", source],
-        ["Стабильность", stability],
-        ["Гео", geo],
-    ]
-
-    table_data = []
-    for k, v in meta_rows:
-        table_data.append([
-            Paragraph(f"<b>{k}</b>", muted),
-            Paragraph(v, body)
-        ])
-
-    meta = Table(table_data, colWidths=[35 * mm, width - 35 * mm])
-    meta.setStyle(TableStyle([
-        ("LINEBELOW", (0, 0), (-1, -2), 0.5, BORDER),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-    ]))
-
-    elements.append(meta)
+    # Оценка
+    elements.append(Paragraph(f"<b>{score}/10</b> — текущий уровень управляемости маркетинга.", strong))
+    elements.append(Paragraph(f"Потенциальные потери: {loss} обращений из-за системных разрывов.", body))
+    elements.append(Spacer(1, 6 * mm))
+    elements.append(_progress_bar(score))
     elements.append(Spacer(1, 12 * mm))
 
-    # ===== RECOMMENDATION (компактно) =====
-    recommendation = (
-        "Рекомендуем: выстроить управляемую систему привлечения "
-        "с чётким учётом обращений, регулярным контролем метрик "
-        "и 1–2 стабильными каналами трафика."
-    )
+    # Интерпретация (универсально)
+    elements.append(Paragraph(
+        "Что это означает:",
+        strong
+    ))
+    elements.append(Spacer(1, 4 * mm))
 
-    elements.append(Paragraph(recommendation, body))
+    interpretation = """
+    • Маркетинг работает частично, но не как управляемая система.<br/>
+    • Заявки возникают, однако не масштабируются предсказуемо.<br/>
+    • Отсутствует единая связка: источник → обработка → повторное касание.<br/>
+    • Часть бюджета или усилий не конвертируется в стабильный рост.
+    """
+
+    elements.append(Paragraph(interpretation, body))
     elements.append(Spacer(1, 10 * mm))
 
+    # Блок роста
     elements.append(Paragraph(
-        "Следующий шаг: 30-минутная стратегическая сессия и план действий на 14 дней.",
-        body
+        "Зона быстрого усиления (14 дней):",
+        strong
+    ))
+    elements.append(Spacer(1, 4 * mm))
+
+    growth = """
+    • Зафиксировать 1–2 стабильных канала привлечения.<br/>
+    • Ввести учёт обращений и контроль конверсии.<br/>
+    • Настроить регламент обработки заявок.<br/>
+    • Сформировать систему регулярных маркетинговых действий.
+    """
+
+    elements.append(Paragraph(growth, body))
+    elements.append(Spacer(1, 12 * mm))
+
+    elements.append(Paragraph(
+        "Следующий шаг — 30-минутная стратегическая сессия. Мы определим точки роста и сформируем план внедрения на 14 дней.",
+        strong
     ))
 
+    # Build
     onpage = _make_onpage(logo_reader, FONT_BOLD)
     doc.build(elements, onFirstPage=onpage)
 
