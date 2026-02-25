@@ -2,10 +2,7 @@ from io import BytesIO
 import os
 from typing import Dict, Any, List
 
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    PageBreak
-)
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -16,7 +13,7 @@ from reportlab.lib.utils import ImageReader
 
 
 # =========================
-# BRAND
+# BRAND (твои цвета)
 # =========================
 BRAND_GRAPHITE = colors.HexColor("#292b2d")
 BRAND_CREAM = colors.HexColor("#f6f5ea")
@@ -35,14 +32,10 @@ def _safe(v, default="—"):
         return default
     return str(v)
 
-def _priority(score: int):
-    if score >= 7:
-        return "HIGH"
-    if score >= 4:
-        return "MEDIUM"
-    return "LOW"
+def _clamp(x, lo, hi):
+    return max(lo, min(hi, x))
 
-def _loss_range(score: int):
+def _loss_range(score: int) -> str:
     if score <= 3:
         return "25-45%"
     if score <= 6:
@@ -50,7 +43,7 @@ def _loss_range(score: int):
     return "8-20%"
 
 def _card(rows, width, bg=colors.white, pad=14):
-    t = Table(rows, colWidths=[width])
+    t = Table(rows, colWidths=[width], hAlign="LEFT")
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), bg),
         ("BOX", (0, 0), (-1, -1), 1, BORDER),
@@ -58,46 +51,78 @@ def _card(rows, width, bg=colors.white, pad=14):
         ("RIGHTPADDING", (0, 0), (-1, -1), pad),
         ("TOPPADDING", (0, 0), (-1, -1), pad),
         ("BOTTOMPADDING", (0, 0), (-1, -1), pad),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    return t
+
+def _progress_bar(score: int, width=160*mm, height=6*mm):
+    score = int(_clamp(score, 0, 10))
+    fill = width * (score / 10)
+    empty = width - fill
+    t = Table([["", ""]], colWidths=[fill, empty], rowHeights=[height], hAlign="LEFT")
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, 0), BRAND_TEAL),
+        ("BACKGROUND", (1, 0), (1, 0), GREY_200),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("BOX", (0, 0), (-1, -1), 0, colors.white),
+        ("INNERGRID", (0, 0), (-1, -1), 0, colors.white),
     ]))
     return t
 
 
 # =========================
-# Header
+# Header (каждая страница)
 # =========================
-def _on_page(canvas, doc, logo_reader, font_bold):
-    canvas.saveState()
+def _make_onpage(logo_reader, font_bold: str):
+    def _on_page(canvas, doc):
+        canvas.saveState()
 
-    # background
-    canvas.setFillColor(BRAND_CREAM)
-    canvas.rect(0, 0, A4[0], A4[1], stroke=0, fill=1)
+        # фон
+        canvas.setFillColor(BRAND_CREAM)
+        canvas.rect(0, 0, A4[0], A4[1], stroke=0, fill=1)
 
-    # top bar
-    bar_h = 16 * mm
-    canvas.setFillColor(BRAND_TEAL)
-    canvas.rect(0, A4[1] - bar_h, A4[0], bar_h, stroke=0, fill=1)
+        # полоса
+        bar_h = 16 * mm
+        canvas.setFillColor(BRAND_TEAL)
+        canvas.rect(0, A4[1] - bar_h, A4[0], bar_h, stroke=0, fill=1)
 
-    if logo_reader:
-        canvas.drawImage(
-            logo_reader,
-            doc.leftMargin,
-            A4[1] - bar_h + 3 * mm,
-            width=38 * mm,
-            height=10 * mm,
-            mask='auto'
-        )
+        # лого
+        if logo_reader is not None:
+            try:
+                x = doc.leftMargin
+                y = A4[1] - bar_h + 2.5 * mm
+                # чуть больше + безопаснее по видимости
+                canvas.drawImage(
+                    logo_reader,
+                    x, y,
+                    width=42 * mm,
+                    height=11 * mm,
+                    preserveAspectRatio=True,
+                    mask="auto"
+                )
+            except Exception:
+                # если отрисовка лого падает — просто не роняем PDF
+                pass
 
-    canvas.setFillColor(BRAND_GRAPHITE)
-    canvas.setFont(font_bold, 9)
-    canvas.drawRightString(A4[0] - doc.rightMargin, 10 * mm, f"page {canvas.getPageNumber()}")
+        # номер страницы
+        canvas.setFillColor(BRAND_GRAPHITE)
+        canvas.setFont(font_bold, 9)
+        canvas.drawRightString(A4[0] - doc.rightMargin, 10 * mm, f"стр. {canvas.getPageNumber()}")
 
-    canvas.restoreState()
+        canvas.restoreState()
+    return _on_page
 
 
 # =========================
 # MAIN
 # =========================
 def generate_pdf(data: Dict[str, Any], segment: str):
+    """
+    segment приходит из main, но В PDF НЕ выводим.
+    """
 
     buffer = BytesIO()
     base_path = os.getcwd()
@@ -115,10 +140,18 @@ def generate_pdf(data: Dict[str, Any], segment: str):
         FONT_REG = "Helvetica"
         FONT_BOLD = "Helvetica-Bold"
 
-    logo_reader = None
+    # logo
     logo_abs = os.path.join(base_path, LOGO_PATH)
-    if os.path.exists(logo_abs):
-        logo_reader = ImageReader(logo_abs)
+    logo_reader = None
+    if os.path.exists(logo_abs) and os.path.getsize(logo_abs) > 0:
+        try:
+            logo_reader = ImageReader(logo_abs)
+            print(f"[PDF] Logo loaded: {logo_abs} ({os.path.getsize(logo_abs)} bytes)")
+        except Exception as e:
+            print(f"[PDF] Logo read error: {logo_abs} -> {e}")
+            logo_reader = None
+    else:
+        print(f"[PDF] Logo missing/empty: {logo_abs}")
 
     doc = SimpleDocTemplate(
         buffer,
@@ -127,6 +160,8 @@ def generate_pdf(data: Dict[str, Any], segment: str):
         rightMargin=20 * mm,
         topMargin=26 * mm,
         bottomMargin=18 * mm,
+        title="Shift Motion — Диагностика",
+        author="Shift Motion",
     )
 
     styles = getSampleStyleSheet()
@@ -167,24 +202,25 @@ def generate_pdf(data: Dict[str, Any], segment: str):
     score = int(data.get("score", 0) or 0)
     loss = _loss_range(score)
 
+    width = A4[0] - doc.leftMargin - doc.rightMargin
     elements: List[Any] = []
 
-    width = A4[0] - doc.leftMargin - doc.rightMargin
-
     # =========================
-    # PAGE 1 - COVER
+    # PAGE 1
     # =========================
-    elements.append(Paragraph("Marketing system audit", title))
-    elements.append(Spacer(1, 12 * mm))
+    elements.append(Paragraph("Shift Motion — диагностика маркетинга", title))
+    elements.append(Spacer(1, 10 * mm))
 
     elements.append(Paragraph(f"<b>{score}/10</b>", h2))
-    elements.append(Paragraph(f"Estimated loss: <b>{loss}</b> potential inquiries.", body))
+    elements.append(Paragraph(f"Оценка потерь: <b>{loss}</b> потенциальных обращений.", body))
+    elements.append(Spacer(1, 8 * mm))
+    elements.append(_progress_bar(score))
     elements.append(Spacer(1, 12 * mm))
 
     elements.append(_card(
         [[Paragraph(
-            "Current growth is not fully controlled. "
-            "We see structural gaps between offer, positioning and lead conversion.",
+            "Короткий вывод: рост сейчас не полностью управляется системой. "
+            "Мы видим разрывы между оффером, упаковкой и конверсией в заявку.",
             body
         )]],
         width
@@ -193,55 +229,52 @@ def generate_pdf(data: Dict[str, Any], segment: str):
     elements.append(PageBreak())
 
     # =========================
-    # PAGE 2 - STRATEGIC GAP
+    # PAGE 2
     # =========================
-    elements.append(Paragraph("Strategic gap", title))
+    elements.append(Paragraph("Ключевой разрыв", title))
     elements.append(Spacer(1, 8 * mm))
 
     bullets = [
-        "Offer is not clearly structured.",
-        "Lead path is not engineered.",
-        "Traffic sources are not diversified.",
-        "Conversion logic is not measurable."
+        "Оффер не структурирован в понятную линейку.",
+        "Путь пользователя до заявки не спроектирован.",
+        "Источники трафика не диверсифицированы.",
+        "Конверсия не измеряется как система."
     ]
-
     elements.append(_card(
-        [[Paragraph("<br/>".join([f"- {b}" for b in bullets]), body)]],
+        [[Paragraph("<br/>".join([f"• {b}" for b in bullets]), body)]],
         width
     ))
 
     elements.append(PageBreak())
 
     # =========================
-    # PAGE 3 - 30 DAY PLAN
+    # PAGE 3
     # =========================
-    elements.append(Paragraph("30 day transformation model", title))
+    elements.append(Paragraph("Модель усиления на 30 дней", title))
     elements.append(Spacer(1, 10 * mm))
 
     plan = [
-        "Define core offer and value structure.",
-        "Build conversion scenario (content to action).",
-        "Launch 2 stable lead sources.",
-        "Implement performance tracking."
+        "Зафиксировать ключевой оффер и смыслы (что продаём и кому).",
+        "Собрать сценарий конверсии: контент - доверие - действие.",
+        "Запустить 2 стабильных источника обращений.",
+        "Включить измеримость: заявки, конверсия, стоимость обращения."
     ]
-
     elements.append(_card(
-        [[Paragraph("<br/>".join([f"- {p}" for p in plan]), body)]],
+        [[Paragraph("<br/>".join([f"• {p}" for p in plan]), body)]],
         width
     ))
 
     elements.append(PageBreak())
 
     # =========================
-    # PAGE 4 - ABOUT
+    # PAGE 4
     # =========================
     elements.append(Paragraph("Shift Motion", title))
     elements.append(Spacer(1, 8 * mm))
 
     elements.append(_card(
         [[Paragraph(
-            "We design controlled marketing systems. "
-            "Strategy, structure, execution, measurable growth.",
+            "Мы проектируем управляемые маркетинговые системы: стратегия, структура, внедрение, рост метрик.",
             body
         )]],
         width
@@ -251,17 +284,14 @@ def generate_pdf(data: Dict[str, Any], segment: str):
 
     elements.append(_card(
         [[Paragraph(
-            "30 minute executive session. "
-            "You receive clear priorities and implementation map.",
+            "30 минут. Мы определим приоритеты и дадим карту внедрения на 14 дней.",
             cta_white
         )]],
         width,
         bg=BRAND_TEAL
     ))
 
-    def onpage(canvas, doc):
-        _on_page(canvas, doc, logo_reader, FONT_BOLD)
-
+    onpage = _make_onpage(logo_reader, FONT_BOLD)
     doc.build(elements, onFirstPage=onpage, onLaterPages=onpage)
 
     buffer.seek(0)
