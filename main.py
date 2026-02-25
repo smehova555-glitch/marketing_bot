@@ -2,6 +2,8 @@ print("MAIN FILE LOADED")
 
 import os
 import logging
+from datetime import datetime
+
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher
@@ -68,6 +70,40 @@ def post_pdf_menu():
             [InlineKeyboardButton(text="📅 Записаться", url=f"https://t.me/{AGENCY_USERNAME}")],
             [InlineKeyboardButton(text="📂 Кейсы", url="https://shiftmotion.ru/cases")]
         ]
+    )
+
+
+def quick_cta_menu():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📅 Записаться на 30 минут", url=f"https://t.me/{AGENCY_USERNAME}")],
+            [InlineKeyboardButton(text="📋 Заполнить бриф (если хотите агентство)", url="https://shiftmotion.ru/brief")],
+        ]
+    )
+
+
+def leadgen_followup_text(score: int, segment: str) -> str:
+    """
+    Прогрев после PDF от лица агентства (тон 'мы').
+    """
+    if score >= 7:
+        level = "сильная база"
+        pain = "Сейчас логичнее всего докрутить конверсию и усилить 1–2 канала, чтобы масштабировать без хаоса."
+        offer = "Мы можем за 30 минут показать, где быстрее всего вырастут заявки — без абстрактного «вести соцсети лучше»."
+    elif score >= 4:
+        level = "есть фундамент, но рост неуправляем"
+        pain = "Чаще всего заявки идут волнами: нет связки «контент → доверие → заявка», из-за этого теряется часть аудитории."
+        offer = "На 30-минутном разборе мы соберём мини-воронку и дадим план действий на 7–14 дней."
+    else:
+        level = "система почти не управляет заявками"
+        pain = "Обычно главный слив — нет ясного оффера и понятного пути до заявки, поэтому даже сильный продукт не конвертируется."
+        offer = "За 30 минут мы покажем 3 быстрые правки, которые дадут первые обращения."
+
+    return (
+        f"Короткий вывод по результату: *{score}/10* (сегмент: *{segment}*).\n"
+        f"Уровень: *{level}*.\n\n"
+        f"{pain}\n\n"
+        f"{offer}"
     )
 
 
@@ -145,13 +181,14 @@ async def finish_before_contact(message: Message, state: FSMContext):
     await state.update_data(budget=message.text)
     data = await state.get_data()
 
+    data["brand"] = "Shift Motion"
     data["telegram_id"] = message.from_user.id
     data["username"] = message.from_user.username
 
     score = calculate_score(data)
     segment = get_segment(score)
 
-    await state.update_data(score=score, segment=segment)
+    await state.update_data(score=score, segment=segment, brand="Shift Motion")
 
     await message.answer(
         "Чтобы получить персональный PDF-разбор, пожалуйста, поделитесь контактом.",
@@ -173,7 +210,8 @@ async def receive_contact(message: Message, state: FSMContext):
 
     save_lead(data)
 
-    score = data.get("score", 0)
+    score = int(data.get("score", 0) or 0)
+    segment = data.get("segment", "—")
 
     if score >= 7:
         priority = "🔥 HIGH"
@@ -186,7 +224,7 @@ async def receive_contact(message: Message, state: FSMContext):
         AGENCY_CHAT_ID,
         f"""🔥 Новый лид — Диагностика Shift Motion
 
-📊 Сегмент: {data.get("segment")}
+📊 Сегмент: {segment}
 📈 Score: {score}/10
 🎯 Приоритет: {priority}
 
@@ -206,14 +244,30 @@ async def receive_contact(message: Message, state: FSMContext):
 """
     )
 
-    pdf_buffer = generate_pdf(data, data["segment"])
+    # --- PDF (safe) ---
+    try:
+        pdf_buffer = generate_pdf(data, segment)
+        dt = datetime.now().strftime("%Y-%m-%d")
+        filename = f"ShiftMotion_report_{dt}.pdf"
 
-    await message.answer_document(
-        BufferedInputFile(pdf_buffer.read(), filename="marketing_report.pdf"),
-        caption="📄 Ваш персональный маркетинговый разбор готов."
+        await message.answer_document(
+            BufferedInputFile(pdf_buffer.read(), filename=filename),
+            caption="📄 Ваш персональный маркетинговый разбор готов."
+        )
+    except Exception as e:
+        logging.exception("PDF generation failed: %s", e)
+        await message.answer(
+            "PDF сейчас не удалось сформировать из-за технической ошибки. "
+            "Мы уже получили ваши ответы — мы свяжемся с вами и пришлём разбор."
+        )
+
+    # --- Leadgen upgrade (we-tone) ---
+    await message.answer(
+        leadgen_followup_text(score, segment),
+        parse_mode="Markdown",
+        reply_markup=quick_cta_menu()
     )
 
-    await message.answer("Спасибо! Менеджер свяжется с вами.", reply_markup=ReplyKeyboardRemove())
     await message.answer("Что делаем дальше?", reply_markup=post_pdf_menu())
 
     await state.clear()
