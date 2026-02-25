@@ -1,6 +1,6 @@
 from io import BytesIO
 import os
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List
 
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -42,13 +42,6 @@ def _loss_range(score: int) -> str:
         return "15–35%"
     return "8–20%"
 
-def _priority(score: int) -> str:
-    if score >= 7:
-        return "HIGH"
-    if score >= 4:
-        return "MEDIUM"
-    return "LOW"
-
 def _card(rows, width, bg=colors.white, pad=14):
     t = Table(rows, colWidths=[width], hAlign="LEFT")
     t.setStyle(TableStyle([
@@ -80,66 +73,62 @@ def _progress_bar(score: int, width=160*mm, height=6*mm):
     return t
 
 
-def _build_recommendations(data: Dict[str, Any]) -> List[str]:
+def _build_recommendations_universal(data: Dict[str, Any]) -> List[str]:
     """
-    Рекомендации строго на основе того, что клиент заполнил:
-    strategy, source, stability, geo, budget (+ score для приоритета).
-    Никаких «офферов», «упаковки линейки» и т.п.
+    Универсальные рекомендации (не требуют, чтобы клиент заполнял оффер/продуктовую линейку).
+    Мы всё равно мягко учитываем ответы (источник/стабильность/гео/стратегия/бюджет),
+    но формулировки универсальные и применимы почти всем.
     """
     strategy = _safe(data.get("strategy"))
     source = _safe(data.get("source"))
     stability = _safe(data.get("stability"))
     geo = _safe(data.get("geo"))
     budget = _safe(data.get("budget"))
-    score = int(data.get("score", 0) or 0)
 
     rec: List[str] = []
 
-    # 1) Стратегия
-    if strategy in ("Нет",):
-        rec.append("Зафиксировать базовую маркетинговую цель на 30 дней и 2 ключевых метрики: обращения и конверсию в запись/покупку.")
-    elif strategy in ("Частично",):
-        rec.append("Дособрать стратегию: один приоритетный канал + один резервный, и план тестов на 2 недели.")
-    elif strategy in ("Да",):
-        rec.append("Уточнить KPI по стратегии: что считаем обращением, где фиксируем, как контролируем динамику еженедельно.")
+    # 1) Управляемость и учет
+    rec.append("Ввести учет обращений: источник, дата, статус, причина отказа. Это дает рычаг управления, а не ощущение “волнами”.")
 
-    # 2) Источник заявок
-    if source == "Сарафан":
-        rec.append("Добавить управляемый источник обращений (контент/реклама/партнерства), чтобы снизить зависимость от сарафана.")
-    elif source == "Соцсети":
-        rec.append("Сделать поток обращений измеримым: точки входа, CTA, учёт обращений и причины потерь.")
-    elif source == "Реклама":
-        rec.append("Проверить качество потока: откуда приходят обращения, как быстро обрабатываются, где падает конверсия.")
-    elif source == "Нестабильно":
-        rec.append("Стабилизировать источники: выбрать 2 канала и закрепить регулярность (минимум 2 недели без провалов).")
+    # 2) Скорость обработки
+    rec.append("Настроить регламент обработки: время ответа, скрипт первого сообщения, следующий шаг (созвон/бриф/предоплата).")
 
-    # 3) Стабильность
-    if stability in ("Иногда", "Нет"):
-        rec.append("Внедрить недельный контур управления: план касаний/активностей и контроль результата раз в 7 дней.")
+    # 3) Понятный путь до заявки
+    rec.append("Собрать 1–2 стабильные точки входа в заявку: кнопка/форма/директ/телефон + единый CTA, чтобы не распылять внимание.")
+
+    # 4) Контент/доверие (универсально, без оффера)
+    rec.append("Собрать базовые блоки доверия: кейсы, процесс работы, ответы на вопросы, социальное доказательство (отзывы/результаты).")
+
+    # 5) Источники (адаптивно)
+    if source in ("Сарафан", "Нестабильно"):
+        rec.append("Добавить управляемый источник обращений (контент/реклама/партнерства), чтобы снизить зависимость от случайных рекомендаций.")
     else:
-        rec.append("Усилить предсказуемость: зафиксировать минимум обращений в неделю и держать его через 2 источника.")
+        rec.append("Проверить качество основного канала: откуда приходят обращения и где теряется конверсия на пути к записи/покупке.")
 
-    # 4) Гео
-    if geo == "Нет":
-        rec.append("Если бизнес локальный: завести карточки в Яндекс/2ГИС и заполнить профиль (услуги, фото, часы, контакты).")
-    elif geo == "Есть, но не продвигаем":
-        rec.append("Если бизнес локальный: включить гео как канал спроса — отзывы, фото, актуальные услуги, регулярные обновления.")
-    elif geo == "Да, продвигаем":
-        rec.append("Продолжать гео и измерять вклад: сколько обращений/маршрутов/звонков приходит из карточек.")
+    # 6) Стабильность (адаптивно)
+    if stability in ("Нет", "Иногда"):
+        rec.append("Ввести недельный контур управления: план активностей и контроль результата раз в 7 дней (что сделали → что получили).")
+    else:
+        rec.append("Закрепить стабильность: держать минимум активностей/касаний в неделю и не допускать провалов по регулярности.")
 
-    # 5) Бюджет (без советов «про оффер»)
-    if budget in ("до 50 тыс",):
-        rec.append("При бюджете до 50 тыс: фокус на регулярности, конверсии в обращение и усилении бесплатных точек входа.")
-    elif budget in ("50–150 тыс", "150–300 тыс", "300+ тыс"):
-        rec.append("При вашем бюджете: закрепить 1 основной платный источник и 1 органический, чтобы не зависеть от одного канала.")
+    # 7) Гео (адаптивно)
+    if geo in ("Нет", "Есть, но не продвигаем"):
+        rec.append("Если бизнес локальный: оформить карточки в Яндекс/2ГИС и поддерживать актуальность (услуги, фото, отзывы, ответы).")
+    else:
+        rec.append("Если гео уже ведется: измерять вклад — сколько обращений/звонков/маршрутов приходит из карточек.")
 
-    # подстрахуемся: максимум 6–7 пунктов, чтобы поместилось премиально
-    # и минимум 4 пункта, чтобы было «не пусто»
-    rec = [r for r in rec if r]
-    if len(rec) > 7:
-        rec = rec[:7]
-    if len(rec) < 4:
-        rec.append("Зафиксировать приоритеты: что делаем в первую очередь, что не делаем ближайшие 14 дней.")
+    # 8) Стратегия/KPI (универсально)
+    if strategy in ("Нет", "Частично"):
+        rec.append("Зафиксировать цель на 30 дней и 2 метрики: обращения и конверсия в запись/покупку. Этого достаточно для управления.")
+    else:
+        rec.append("Уточнить KPI: что считаем обращением, где фиксируем, и как принимаем решения раз в неделю по цифрам.")
+
+    # 9) Бюджет (без конкретных сумм в расчетах)
+    rec.append(f"Бюджет: {budget}. Разделить усилия на 2 части: стабильная база (регулярность) + тесты (1–2 гипотезы в неделю).")
+
+    # Чтобы влезало на 1 страницу: 7–9 пунктов максимум
+    if len(rec) > 9:
+        rec = rec[:9]
     return rec
 
 
@@ -159,8 +148,7 @@ def _make_onpage(logo_reader, font_bold: str):
         canvas.setFillColor(BRAND_TEAL)
         canvas.rect(0, A4[1] - bar_h, A4[0], bar_h, stroke=0, fill=1)
 
-        # лого: БЕЗ плашки, чтобы не было "квадрата".
-        # Прозрачность PNG поддерживаем через mask="auto" (если PNG реально с альфой).
+        # лого: без плашки, прозрачность через mask="auto"
         if logo_reader is not None:
             try:
                 img_w, img_h = logo_reader.getSize()
@@ -172,7 +160,6 @@ def _make_onpage(logo_reader, font_bold: str):
                 x = doc.leftMargin
                 y = A4[1] - bar_h + (bar_h - target_h) / 2
 
-                # основной режим — прозрачность
                 try:
                     canvas.drawImage(
                         logo_reader,
@@ -183,7 +170,6 @@ def _make_onpage(logo_reader, font_bold: str):
                         mask="auto"
                     )
                 except Exception:
-                    # fallback без mask
                     canvas.drawImage(
                         logo_reader,
                         x, y,
@@ -212,7 +198,7 @@ def generate_pdf(data: Dict[str, Any], segment: str):
     """
     buffer = BytesIO()
 
-    # Важно для Render: путь от файла, а не от рабочей директории процесса
+    # Надежно для Render
     base_path = os.path.dirname(os.path.abspath(__file__))
 
     # Fonts
@@ -299,7 +285,6 @@ def generate_pdf(data: Dict[str, Any], segment: str):
     # Data
     score = int(data.get("score", 0) or 0)
     loss = _loss_range(score)
-    priority = _priority(score)
 
     city = _safe(data.get("city"))
     niche = _safe(data.get("niche"))
@@ -314,21 +299,20 @@ def generate_pdf(data: Dict[str, Any], segment: str):
     elements: List[Any] = []
 
     # =========================
-    # PAGE 1 — Summary (премиум, коротко)
+    # PAGE 1
     # =========================
     elements.append(Paragraph("Shift Motion — маркетинговая диагностика", title))
     elements.append(Spacer(1, 8 * mm))
 
-    # компактная карточка данных (без растягивания)
-    meta = Table(
-        [
-            [Paragraph("Город", muted), Paragraph(city, body), Paragraph("Ниша", muted), Paragraph(niche, body)],
-            [Paragraph("Роль", muted), Paragraph(role, body), Paragraph("Бюджет", muted), Paragraph(budget, body)],
-            [Paragraph("Стратегия", muted), Paragraph(strategy, body), Paragraph("Приоритет", muted), Paragraph(priority, body)],
-        ],
-        colWidths=[18*mm, 62*mm, 18*mm, 62*mm],
-        hAlign="LEFT"
-    )
+    # ✅ Ровная таблица: 2 колонки (метка/значение), никаких узких ячеек
+    meta_rows = [
+        [Paragraph("Город", muted), Paragraph(city, body)],
+        [Paragraph("Ниша", muted), Paragraph(niche, body)],
+        [Paragraph("Роль", muted), Paragraph(role, body)],
+        [Paragraph("Бюджет", muted), Paragraph(budget, body)],
+        [Paragraph("Стратегия", muted), Paragraph(strategy, body)],
+    ]
+    meta = Table(meta_rows, colWidths=[28 * mm, width - 28 * mm], hAlign="LEFT")
     meta.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 1, BORDER),
         ("INNERGRID", (0, 0), (-1, -1), 0.5, BORDER),
@@ -348,23 +332,18 @@ def generate_pdf(data: Dict[str, Any], segment: str):
     elements.append(_progress_bar(score))
     elements.append(Spacer(1, 10 * mm))
 
-    # короткий вывод только из заполненных полей
-    summary_lines = [
-        f"Источник обращений: <b>{source}</b>.",
-        f"Стабильность: <b>{stability}</b>.",
-        f"Гео (Яндекс/2ГИС): <b>{geo}</b>.",
-    ]
-    elements.append(_card([[Paragraph(" ".join(summary_lines), body)]], width, bg=colors.white))
+    summary = f"Источник обращений: <b>{source}</b>. Стабильность: <b>{stability}</b>. Гео (Яндекс/2ГИС): <b>{geo}</b>."
+    elements.append(_card([[Paragraph(summary, body)]], width, bg=colors.white))
 
     elements.append(PageBreak())
 
     # =========================
-    # PAGE 2 — Recommendations + CTA (1 страница)
+    # PAGE 2
     # =========================
-    elements.append(Paragraph("Рекомендации (приоритеты на 14 дней)", title))
+    elements.append(Paragraph("Рекомендации (универсальные приоритеты)", title))
     elements.append(Spacer(1, 6 * mm))
 
-    recs = _build_recommendations(data)
+    recs = _build_recommendations_universal(data)
     rec_text = "<br/>".join([f"• {r}" for r in recs])
     elements.append(_card([[Paragraph(rec_text, body)]], width, bg=colors.white))
 
