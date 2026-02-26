@@ -1,9 +1,10 @@
 # =========================
-# MAIN.PY — ПОЛНАЯ ВЕРСИЯ (ФИНАЛ)
+# main.py — ПОЛНАЯ ВЕРСИЯ (КОРРЕКТНАЯ С ПОЛНЫМ ХРАНЕНИЕМ)
 # ✅ Сегмент НЕ показываем клиенту нигде
 # ✅ Сегмент остаётся только в сообщении менеджеру (AGENCY_CHAT_ID)
 # ✅ 2 кнопки после PDF + кейсы текстом
 # ✅ Ник + телефон приводим к надежному виду
+# ✅ В БД сохраняем: city, niche, full_name, phone, is_own_contact
 # =========================
 
 print("MAIN FILE LOADED")
@@ -37,7 +38,7 @@ from db import init_db, save_lead
 logging.basicConfig(level=logging.INFO)
 
 WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL = "https://marketing-bot-tb33.onrender.com/webhook"
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://marketing-bot-tb33.onrender.com/webhook")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -76,7 +77,6 @@ def contact_kb():
     )
 
 
-# ✅ Только 2 кнопки: написать + бриф
 def post_pdf_menu():
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -92,7 +92,7 @@ def post_pdf_menu():
 def _normalize_phone(phone):
     """
     Приводим к единому виду:
-    - убираем пробелы/скобки/дефисы
+    - убираем пробелы/скобки/дефисы/nbsp
     - если начинается с 00 -> меняем на +
     - если только цифры -> добавляем +
     """
@@ -109,11 +109,6 @@ def _normalize_phone(phone):
 
 
 def _tg_contact_line(message: Message) -> str:
-    """
-    Надежная идентификация:
-    - если есть username -> @username
-    - если нет -> "Имя (tg://user?id=...)" — кликается в большинстве клиентов Telegram
-    """
     u = message.from_user
     if u.username:
         return f"@{u.username}"
@@ -125,9 +120,6 @@ def _tg_contact_line(message: Message) -> str:
 # LEADGEN FOLLOW-UP (тон "мы") — БЕЗ СЕГМЕНТА
 # =========================
 def leadgen_followup_text(score: int) -> str:
-    """
-    Клиенту мы не "пришиваем" жёсткие диагнозы. Формулировки мягче и экологичнее.
-    """
     if score >= 7:
         level = "сильная база"
         pain = "Сейчас логичнее всего докрутить конверсию и усилить 1–2 канала, чтобы масштабировать без перегруза."
@@ -230,9 +222,12 @@ async def q_geo(message: Message, state: FSMContext):
 @dp.message(Diagnostic.budget)
 async def finish_before_contact(message: Message, state: FSMContext):
     await state.update_data(budget=message.text)
+
     data = await state.get_data()
 
+    # базовые поля
     data["brand"] = "Shift Motion"
+    data["lead_type"] = "diagnostic"  # ✅ вместо type
     data["telegram_id"] = message.from_user.id
     data["username"] = message.from_user.username or ""
     data["full_name"] = message.from_user.full_name or ""
@@ -241,7 +236,15 @@ async def finish_before_contact(message: Message, state: FSMContext):
     segment = get_segment(score)
 
     # сохраняем в state для внутренней логики + менеджера
-    await state.update_data(score=score, segment=segment, brand="Shift Motion")
+    await state.update_data(
+        score=score,
+        segment=segment,
+        brand="Shift Motion",
+        lead_type="diagnostic",
+        telegram_id=data["telegram_id"],
+        username=data["username"],
+        full_name=data["full_name"],
+    )
 
     await message.answer(
         "Чтобы получить персональный PDF-разбор, пожалуйста, поделитесь контактом.",
@@ -252,7 +255,6 @@ async def finish_before_contact(message: Message, state: FSMContext):
 
 @dp.message(Diagnostic.contact)
 async def receive_contact(message: Message, state: FSMContext):
-
     if not message.contact:
         await message.answer("Используйте кнопку для передачи контакта.")
         return
@@ -267,7 +269,9 @@ async def receive_contact(message: Message, state: FSMContext):
 
     data["phone"] = phone
     data["is_own_contact"] = is_own_contact
+    data["contact_user_id"] = message.contact.user_id
 
+    # ✅ сохраняем ВСЁ нужное в базу
     save_lead(data)
 
     score = int(data.get("score", 0) or 0)
@@ -309,20 +313,21 @@ async def receive_contact(message: Message, state: FSMContext):
 
     # --- PDF (safe) ---
     try:
-        # segment передаём по сигнатуре, но в клиентском PDF он НЕ выводится
-        pdf_buffer = generate_pdf(data, segment)
+        pdf_buffer = generate_pdf(data, segment)  # segment по сигнатуре, но в PDF НЕ выводим
         dt = datetime.now().strftime("%Y-%m-%d")
         filename = f"ShiftMotion_report_{dt}.pdf"
 
         await message.answer_document(
             BufferedInputFile(pdf_buffer.read(), filename=filename),
-            caption="📄 Ваш персональный маркетинговый разбор готов."
+            caption="📄 Ваш персональный маркетинговый разбор готов.",
+            reply_markup=ReplyKeyboardRemove()
         )
     except Exception as e:
         logging.exception("PDF generation failed: %s", e)
         await message.answer(
             "PDF сейчас не удалось сформировать из-за технической ошибки. "
-            "Мы уже получили ваши ответы — мы свяжемся с вами и пришлём разбор."
+            "Мы уже получили ваши ответы — мы свяжемся с вами и пришлём разбор.",
+            reply_markup=ReplyKeyboardRemove()
         )
 
     # --- One screen CTA: 2 buttons + cases text (no segment) ---
