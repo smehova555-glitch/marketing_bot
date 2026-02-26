@@ -2,7 +2,7 @@ from io import BytesIO
 import os
 from typing import Dict, Any, Tuple, List
 
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -16,7 +16,7 @@ from reportlab.lib.utils import ImageReader
 # BRAND
 # =========================
 BRAND_GRAPHITE = colors.HexColor("#292b2d")
-BRAND_CREAM = colors.HexColor("#f6f5ea")
+BRAND_CREAM = colors.HexColor("#f6f5ea")  # если "слишком белый" — временно сделай #FFE4E6 для теста
 BRAND_TEAL = colors.HexColor("#024a68")
 BORDER = colors.HexColor("#D6D3C8")
 GREY_200 = colors.HexColor("#E5E7EB")
@@ -193,6 +193,9 @@ def generate_pdf(data: Dict[str, Any], segment: str):
     buffer = BytesIO()
     base_path = os.path.dirname(os.path.abspath(__file__))
 
+    # DEBUG (временно): чтобы видеть в Render logs, что грузится именно этот файл
+    print("PDF_REPORT LOADED FROM:", __file__)
+
     # Fonts
     reg = os.path.join(base_path, "fonts", "Jost-Regular.ttf")
     bold = os.path.join(base_path, "fonts", "Jost-Bold.ttf")
@@ -338,8 +341,9 @@ def generate_pdf(data: Dict[str, Any], segment: str):
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]))
     elements.append(cta)
-print("PDF_REPORT LOADED FROM:", __file__)
-print("PDF BUILD HOOKS: onFirstPage+onLaterPages enabled")
+
+    print("PDF BUILD HOOKS: onFirstPage+onLaterPages enabled")
+
     # Build — ВАЖНО: onLaterPages тоже!
     onpage = _make_onpage(logo_reader)
     doc.build(
