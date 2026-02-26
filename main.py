@@ -3,6 +3,7 @@
 # ✅ Сегмент НЕ показываем клиенту нигде
 # ✅ Сегмент остаётся только в сообщении менеджеру (AGENCY_CHAT_ID)
 # ✅ 2 кнопки после PDF + кейсы текстом
+# ✅ Ник + телефон приводим к надежному виду
 # =========================
 
 print("MAIN FILE LOADED")
@@ -86,21 +87,59 @@ def post_pdf_menu():
 
 
 # =========================
+# CONTACT HELPERS (ник + телефон)
+# =========================
+def _normalize_phone(phone):
+    """
+    Приводим к единому виду:
+    - убираем пробелы/скобки/дефисы
+    - если начинается с 00 -> меняем на +
+    - если только цифры -> добавляем +
+    """
+    if not phone:
+        return "—"
+    p = str(phone).strip()
+    for ch in [" ", "-", "(", ")", "\u00A0"]:
+        p = p.replace(ch, "")
+    if p.startswith("00"):
+        p = "+" + p[2:]
+    if not p.startswith("+") and p.isdigit():
+        p = "+" + p
+    return p
+
+
+def _tg_contact_line(message: Message) -> str:
+    """
+    Надежная идентификация:
+    - если есть username -> @username
+    - если нет -> "Имя (tg://user?id=...)" — кликается в большинстве клиентов Telegram
+    """
+    u = message.from_user
+    if u.username:
+        return f"@{u.username}"
+    name = (u.full_name or "Пользователь").strip()
+    return f"{name} (tg://user?id={u.id})"
+
+
+# =========================
 # LEADGEN FOLLOW-UP (тон "мы") — БЕЗ СЕГМЕНТА
 # =========================
 def leadgen_followup_text(score: int) -> str:
+    """
+    Клиенту мы не "пришиваем" жёсткие диагнозы. Формулировки мягче и экологичнее.
+    """
     if score >= 7:
         level = "сильная база"
-        pain = "Сейчас логичнее всего докрутить конверсию и усилить 1–2 канала, чтобы масштабировать без хаоса."
-        offer = "Мы можем за 30 минут показать, где быстрее всего вырастут заявки — без абстрактного «вести соцсети лучше»."
+        pain = "Сейчас логичнее всего докрутить конверсию и усилить 1–2 канала, чтобы масштабировать без перегруза."
+        offer = "На 30-минутной сессии мы покажем, где быстрее всего вырастут обращения и что делать в ближайшие 14 дней."
     elif score >= 4:
-        level = "есть фундамент, но рост неуправляем"
-        pain = "Чаще всего заявки идут волнами: нет связки «контент → доверие → заявка», из-за этого теряется часть аудитории."
-        offer = "На 30-минутном разборе мы соберём мини-воронку и дадим план действий на 7–14 дней."
+        level = "есть фундамент, но рост не всегда управляем"
+        pain = "Чаще всего обращения идут волнами: не хватает связки «контент → доверие → действие», из-за этого теряется часть аудитории."
+        offer = "На 30-минутном разборе мы соберём мини-контур управления и дадим план действий на 7–14 дней."
     else:
-        level = "система почти не управляет заявками"
-        pain = "Обычно главный слив — нет ясного оффера и понятного пути до заявки, поэтому даже сильный продукт не конвертируется."
-        offer = "За 30 минут мы покажем 3 быстрые правки, которые дадут первые обращения."
+        level = "систему можно усилить"
+        pain = "Обычно теряются обращения на маршруте: вход → обработка → повторное касание → конверсия."
+        offer = "За 30 минут мы покажем 3 быстрые правки, которые дадут первые стабильные результаты."
 
     return (
         f"Короткий вывод по результату: *{score}/10*.\n"
@@ -117,7 +156,7 @@ def leadgen_followup_text(score: int) -> str:
 async def start(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "Диагностика маркетинга Shift Motion.\n\nКто вы?",
+        "Маркетинговая диагностика Shift Motion.\n\nКто вы?",
         reply_markup=kb(["Собственник", "Личный бренд", "Маркетолог"])
     )
     await state.set_state(Diagnostic.role)
@@ -195,12 +234,13 @@ async def finish_before_contact(message: Message, state: FSMContext):
 
     data["brand"] = "Shift Motion"
     data["telegram_id"] = message.from_user.id
-    data["username"] = message.from_user.username
+    data["username"] = message.from_user.username or ""
+    data["full_name"] = message.from_user.full_name or ""
 
     score = calculate_score(data)
     segment = get_segment(score)
 
-    # сохраняем в state для менеджеров/внутренней логики
+    # сохраняем в state для внутренней логики + менеджера
     await state.update_data(score=score, segment=segment, brand="Shift Motion")
 
     await message.answer(
@@ -218,13 +258,20 @@ async def receive_contact(message: Message, state: FSMContext):
         return
 
     data = await state.get_data()
-    phone = message.contact.phone_number
+
+    raw_phone = message.contact.phone_number
+    phone = _normalize_phone(raw_phone)
+
+    # проверка: контакт "свой" или "чужой"
+    is_own_contact = (message.contact.user_id == message.from_user.id)
+
     data["phone"] = phone
+    data["is_own_contact"] = is_own_contact
 
     save_lead(data)
 
     score = int(data.get("score", 0) or 0)
-    segment = data.get("segment", "—")  # ✅ сегмент только для менеджера
+    segment = data.get("segment", "—")  # ✅ сегмент только менеджеру
 
     if score >= 7:
         priority = "🔥 HIGH"
@@ -233,18 +280,20 @@ async def receive_contact(message: Message, state: FSMContext):
     else:
         priority = "LOW"
 
+    tg_line = _tg_contact_line(message)
+
     # ✅ Уведомление менеджеру (сегмент оставляем)
     await bot.send_message(
         AGENCY_CHAT_ID,
         f"""🔥 Новый лид — Диагностика Shift Motion
 
 📊 Сегмент: {segment}
-📈 Score: {score}/10
+📈 Внутренняя оценка: {score}/10
 🎯 Приоритет: {priority}
 
-📞 Телефон: {phone}
+📞 Телефон: {phone}{" (контакт не совпадает с аккаунтом)" if not is_own_contact else ""}
+👤 Telegram: {tg_line}
 🆔 Telegram ID: {data.get("telegram_id")}
-👤 Username: @{data.get("username")}
 
 🌍 Город: {data.get("city")}
 🏷 Ниша: {data.get("niche")}
@@ -260,7 +309,7 @@ async def receive_contact(message: Message, state: FSMContext):
 
     # --- PDF (safe) ---
     try:
-        # segment передаём в generate_pdf по сигнатуре, но в клиентском PDF он НЕ выводится
+        # segment передаём по сигнатуре, но в клиентском PDF он НЕ выводится
         pdf_buffer = generate_pdf(data, segment)
         dt = datetime.now().strftime("%Y-%m-%d")
         filename = f"ShiftMotion_report_{dt}.pdf"
