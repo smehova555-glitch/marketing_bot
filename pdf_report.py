@@ -390,10 +390,3 @@ def generate_pdf(data: Dict[str, Any], segment: str):
 
     buffer.seek(0)
     return buffer
-        elements,
-        onFirstPage=onpage,
-        onLaterPages=onpage
-    )
-
-    buffer.seek(0)
-    return buffer
