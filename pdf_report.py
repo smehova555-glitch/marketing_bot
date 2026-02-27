@@ -2,6 +2,9 @@ from io import BytesIO
 import os
 from typing import Dict, Any, Tuple, List
 
+import re
+import html
+
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
@@ -16,7 +19,7 @@ from reportlab.lib.utils import ImageReader
 # BRAND
 # =========================
 BRAND_GRAPHITE = colors.HexColor("#292b2d")
-BRAND_CREAM = colors.HexColor("#f6f5ea")  # если "слишком белый" — временно сделай #FFE4E6 для теста
+BRAND_CREAM = colors.HexColor("#f6f5ea")  # если "слишком белый" — тест: #FFE4E6
 BRAND_TEAL = colors.HexColor("#024a68")
 BORDER = colors.HexColor("#D6D3C8")
 GREY_200 = colors.HexColor("#E5E7EB")
@@ -39,10 +42,42 @@ def _clamp(x: int, lo: int, hi: int) -> int:
 
 
 def _quotes(text: str) -> str:
-    # Минимальная гарантия: убираем прямые кавычки
+    """
+    Приводит любые кавычки к «».
+    Ловит: ", “ ”, „ ‟, &quot;, а также уже существующие «».
+    """
     if not text:
         return ""
-    return text.replace('"', "«").replace("'", "’")
+
+    t = html.unescape(str(text))
+
+    # нормализация “умных” кавычек
+    t = (
+        t.replace("“", "«")
+         .replace("”", "»")
+         .replace("„", "«")
+         .replace("‟", "«")
+    )
+
+    # пары прямых кавычек "..." -> «...»
+    t = re.sub(r'"([^"]+)"', r'«\1»', t)
+
+    # если остались одиночные " — заменим по очереди: « потом »
+    if '"' in t:
+        out = []
+        open_q = True
+        for ch in t:
+            if ch == '"':
+                out.append("«" if open_q else "»")
+                open_q = not open_q
+            else:
+                out.append(ch)
+        t = "".join(out)
+
+    # одинарные кавычки -> ’
+    t = t.replace("‘", "’").replace("’", "’").replace("'", "’")
+
+    return t
 
 
 def _stage_from_score(score: int) -> Tuple[str, str]:
@@ -215,6 +250,7 @@ def generate_pdf(data: Dict[str, Any], segment: str):
     if os.path.exists(logo_abs) and os.path.getsize(logo_abs) > 0:
         try:
             logo_reader = ImageReader(logo_abs)
+            print("LOGO LOADED:", logo_abs)
         except Exception as e:
             print("LOGO READ ERROR:", repr(e))
             logo_reader = None
@@ -347,6 +383,13 @@ def generate_pdf(data: Dict[str, Any], segment: str):
     # Build — ВАЖНО: onLaterPages тоже!
     onpage = _make_onpage(logo_reader)
     doc.build(
+        elements,
+        onFirstPage=onpage,
+        onLaterPages=onpage
+    )
+
+    buffer.seek(0)
+    return buffer
         elements,
         onFirstPage=onpage,
         onLaterPages=onpage
